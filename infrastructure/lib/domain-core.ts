@@ -9,6 +9,9 @@ import { Construct } from 'constructs';
 /** Props for {@link DomainCoreStack}. */
 export interface DomainCoreStackProps extends cdk.NestedStackProps {
 
+  /** Project name prefix for resource naming. */
+  name: string;
+
   /** Deployment environment name (e.g. 'dev', 'prod'). */
   environment: string;
 
@@ -31,13 +34,13 @@ export class DomainCoreStack extends cdk.NestedStack {
     super(scope, id, props);
 
     const feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
-      tableName: `Feedback-${props.environment}`,
+      tableName: `${props.name}-${props.environment}-feedback`,
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     const handler = new NodejsFunction(this, 'CoreHandler', {
-      functionName: `CoreHandler-${props.environment}`,
+      functionName: `${props.name}-${props.environment}-core-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,
       entry: path.join(__dirname, '../../src/domains/core/index.ts'),
       handler: 'handler',

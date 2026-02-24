@@ -5,6 +5,9 @@ import { Construct } from 'constructs';
 /** Props for {@link AuthStack}. */
 export interface AuthStackProps extends cdk.NestedStackProps {
 
+  /** Project name prefix for resource naming. */
+  name: string;
+
   /** Deployment environment name (e.g. 'dev', 'prod'). */
   environment: string;
 }
@@ -27,7 +30,7 @@ export class AuthStack extends cdk.NestedStack {
     super(scope, id, props);
 
     this.userPool = new cognito.UserPool(this, 'UserPool', {
-      userPoolName: `UserPool-${props.environment}`,
+      userPoolName: `${props.name}-${props.environment}-user-pool`,
       selfSignUpEnabled: true,
       autoVerify: { email: true },
       signInAliases: { email: true },

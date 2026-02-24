@@ -1,16 +1,31 @@
 import * as cdk from 'aws-cdk-lib/core';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { Construct } from 'constructs';
 
 /** Props for {@link RestApiStack}. */
 export interface RestApiStackProps extends cdk.NestedStackProps {
+
+  /** Project name prefix for resource naming. */
+  name: string;
 
   /** Deployment environment name (e.g. 'dev', 'prod'). */
   environment: string;
 
   /** Cognito User Pool to back the API authorizer. */
   userPool: cognito.IUserPool;
+
+  /** Custom domain name for the API (e.g. 'api.techniverse.com.au'). */
+  domainName?: string;
+
+  /** ACM certificate covering the custom domain (must be in the same region as the API). */
+  certificate?: acm.ICertificate;
+
+  /** Route53 hosted zone for creating DNS records. */
+  hostedZone?: route53.IHostedZone;
 }
 
 /**
@@ -31,12 +46,33 @@ export class RestApiStack extends cdk.NestedStack {
     super(scope, id, props);
 
     this.api = new apigateway.RestApi(this, 'RestApi', {
-      restApiName: `RestApi-${props.environment}`,
+      restApiName: `${props.name}-${props.environment}-rest-api`,
+      endpointTypes: [apigateway.EndpointType.REGIONAL],
     });
 
     this.authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoAuthorizer', {
-      authorizerName: `CognitoAuthorizer-${props.environment}`,
+      authorizerName: `${props.name}-${props.environment}-cognito-authorizer`,
       cognitoUserPools: [props.userPool],
     });
+
+    if (props.domainName && props.certificate) {
+      /** Custom domain name for the REST API. */
+      const domain = this.api.addDomainName('CustomDomain', {
+        domainName: props.domainName,
+        certificate: props.certificate,
+        endpointType: apigateway.EndpointType.REGIONAL,
+      });
+
+      if (props.hostedZone) {
+        /** Route53 A record aliasing the custom domain to the API Gateway regional endpoint. */
+        new route53.ARecord(this, 'ApiARecord', {
+          zone: props.hostedZone,
+          recordName: props.domainName,
+          target: route53.RecordTarget.fromAlias(
+            new targets.ApiGatewayDomain(domain),
+          ),
+        });
+      }
+    }
   }
 }

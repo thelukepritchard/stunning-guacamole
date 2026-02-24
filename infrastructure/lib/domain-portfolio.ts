@@ -8,6 +8,9 @@ import { Construct } from 'constructs';
 /** Props for {@link DomainPortfolioStack}. */
 export interface DomainPortfolioStackProps extends cdk.NestedStackProps {
 
+  /** Project name prefix for resource naming. */
+  name: string;
+
   /** Deployment environment name (e.g. 'dev', 'prod'). */
   environment: string;
 
@@ -30,7 +33,7 @@ export class DomainPortfolioStack extends cdk.NestedStack {
     super(scope, id, props);
 
     const handler = new NodejsFunction(this, 'PortfolioHandler', {
-      functionName: `PortfolioHandler-${props.environment}`,
+      functionName: `${props.name}-${props.environment}-portfolio-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,
       entry: path.join(__dirname, '../../src/domains/portfolio/index.ts'),
       handler: 'handler',
