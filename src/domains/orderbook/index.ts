@@ -22,6 +22,15 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     case 'PUT /orderbook/{id}':     return updateOrder(event);
     case 'DELETE /orderbook/{id}':  return cancelOrder(event);
     default:
-      return { statusCode: 404, body: JSON.stringify({ error: 'Route not found' }) };
+      return {
+        statusCode: 404,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+        },
+        body: JSON.stringify({ error: 'Route not found' }),
+      };
   }
 }

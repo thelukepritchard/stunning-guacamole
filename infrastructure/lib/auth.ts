@@ -1,5 +1,7 @@
 import * as cdk from 'aws-cdk-lib/core';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as identity from 'aws-cdk-lib/aws-cognito-identitypool';
 import { Construct } from 'constructs';
 
 /** Props for {@link AuthStack}. */
@@ -38,5 +40,30 @@ export class AuthStack extends cdk.NestedStack {
     });
 
     this.userPoolClient = this.userPool.addClient('UserPoolClient');
+
+    const authenticatedRole = new iam.Role(this, 'DefaultRole', {
+      assumedBy: new iam.FederatedPrincipal(
+        'cognito-identity.amazonaws.com',
+        {
+          StringEquals: {
+            'cognito-identity.amazonaws.com:aud': 'ap-southeast-2:25823bd1-4771-490a-9e54-3968b4535fed'// identityPool.identityPoolId,
+          },
+          'ForAnyValue:StringLike': {
+            'cognito-identity.amazonaws.com:amr': 'authenticated',
+          },
+        },
+        'sts:AssumeRoleWithWebIdentity'
+      ),
+    });
+
+    const identityPool = new identity.IdentityPool(this, 'myidentitypool', {
+      identityPoolName: `${props.name}-${props.environment}-identity-pool`,
+      authenticatedRole: authenticatedRole,
+    });
+
+    identityPool.addUserPoolAuthentication(new identity.UserPoolAuthenticationProvider({
+      userPool: this.userPool,
+      userPoolClient: this.userPoolClient,
+    }));
   }
 }

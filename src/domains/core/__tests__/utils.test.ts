@@ -10,7 +10,10 @@ describe('jsonResponse', () => {
   it('sets the Content-Type header to application/json', () => {
     const result = jsonResponse(200, {});
 
-    expect(result.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(result.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    });
   });
 
   it('serialises the body as JSON', () => {

@@ -10,8 +10,8 @@ A single root `InfrastructureStack` composed of nested stacks:
 AuthStack (Cognito User Pool + Client)
     |
 RestApiStack (API Gateway REST API + Cognito Authorizer)
-    |           |          |
-Portfolio    Orderbook    Core
+    |           |          |         |
+Portfolio    Orderbook    Core    Trading
 
 AuthPageStack  (S3 + CloudFront — auth page SPA)
 WebappStack    (S3 + CloudFront — authenticated dashboard)
@@ -23,6 +23,7 @@ WebsiteStack   (S3 + CloudFront — public marketing site)
 - **DomainPortfolioStack** (`lib/domain-portfolio.ts`) — `NodejsFunction` bundled from `src/domains/portfolio/index.ts`, integrated at `ANY /portfolio` and `ANY /portfolio/{id}`, Cognito-protected.
 - **DomainOrderbookStack** (`lib/domain-orderbook.ts`) — `NodejsFunction` bundled from `src/domains/orderbook/index.ts`, integrated at `ANY /orderbook` and `ANY /orderbook/{id}`, Cognito-protected.
 - **DomainCoreStack** (`lib/domain-core.ts`) — DynamoDB `Feedback` table + `NodejsFunction` bundled from `src/domains/core/index.ts`, integrated at `POST /core/feedback`, Cognito-protected.
+- **DomainTradingStack** (`lib/domain-trading.ts`) — DynamoDB `Bots` + `Trades` tables, SNS `Indicators` topic, 4 Lambda functions (API handler, price publisher, bot executor, stream handler), EventBridge 1-min schedule, integrated at `/trading/bots`, `/trading/bots/{botId}`, `/trading/trades`, `/trading/trades/{botId}`, Cognito-protected.
 - **AuthPageStack** (`lib/auth-page.ts`) — S3 bucket + CloudFront distribution serving the authentication SPA.
 - **WebappStack** (`lib/webapp.ts`) — S3 bucket + CloudFront distribution serving the authenticated dashboard, with custom domain and Route53 alias.
 - **WebsiteStack** (`lib/website.ts`) — S3 bucket + CloudFront distribution serving the public marketing site, with custom domain and Route53 alias.

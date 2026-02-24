@@ -8,6 +8,7 @@ import { RestApiStack } from '../lib/rest-api';
 import { DomainPortfolioStack } from '../lib/domain-portfolio';
 import { DomainOrderbookStack } from '../lib/domain-orderbook';
 import { DomainCoreStack } from '../lib/domain-core';
+import { DomainTradingStack } from '../lib/domain-trading';
 import { WebappStack } from '../lib/webapp';
 import { WebsiteStack } from '../lib/website';
 
@@ -31,7 +32,7 @@ const regionalCertificateArn = 'arn:aws:acm:ap-southeast-2:090517336066:certific
  * Root stack that composes all nested stacks.
  *
  * Dependency flow:
- *   AuthStack -> RestApiStack -> Portfolio + Orderbook
+ *   AuthStack -> RestApiStack -> Portfolio + Orderbook + Core + Trading
  *   AuthPageStack, WebappStack, WebsiteStack (independent)
  */
 class InfrastructureStack extends cdk.Stack {
@@ -90,6 +91,13 @@ class InfrastructureStack extends cdk.Stack {
     });
 
     new DomainCoreStack(this, `DomainCoreStack`, {
+      name,
+      environment,
+      api: restApi.api,
+      authorizer: restApi.authorizer,
+    });
+
+    new DomainTradingStack(this, `DomainTradingStack`, {
       name,
       environment,
       api: restApi.api,

@@ -90,20 +90,20 @@ export default function DashboardLayout() {
         {NAV_ITEMS.map((item) => (
           <ListItemButton
             key={item.path}
-            selected={location.pathname === item.path}
+            selected={item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)}
             onClick={() => {
               navigate(item.path);
               setMobileOpen(false);
             }}
             sx={{ my: 0.5 }}
           >
-            <ListItemIcon sx={{ minWidth: 40, color: location.pathname === item.path ? 'primary.main' : 'text.secondary' }}>
+            <ListItemIcon sx={{ minWidth: 40, color: (item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)) ? 'primary.main' : 'text.secondary' }}>
               {item.icon}
             </ListItemIcon>
             <ListItemText
               primary={item.label}
               primaryTypographyProps={{
-                fontWeight: location.pathname === item.path ? 600 : 400,
+                fontWeight: (item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)) ? 600 : 400,
                 fontSize: '0.875rem',
               }}
             />

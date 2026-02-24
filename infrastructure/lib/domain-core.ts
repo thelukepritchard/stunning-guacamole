@@ -58,8 +58,15 @@ export class DomainCoreStack extends cdk.NestedStack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     };
 
+    const corsOptions: apigateway.CorsOptions = {
+      allowOrigins: apigateway.Cors.ALL_ORIGINS,
+      allowMethods: apigateway.Cors.ALL_METHODS,
+      allowHeaders: ['Content-Type', 'Authorization'],
+    };
+
     const resource = props.api.root.addResource('core');
     const feedbackResource = resource.addResource('feedback');
+    feedbackResource.addCorsPreflight(corsOptions);
 
     // POST /core/feedback — submit user feedback
     feedbackResource.addMethod('POST', integration, methodOptions);

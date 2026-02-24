@@ -25,8 +25,8 @@ export interface DomainPortfolioStackProps extends cdk.NestedStackProps {
  * Portfolio domain stack.
  *
  * Creates a Lambda function (bundled from `src/domains/portfolio/index.ts`)
- * and wires it as a Cognito-protected proxy under `/portfolio` on the shared
- * REST API. All HTTP methods and sub-paths are forwarded to the handler.
+ * and wires it as a Cognito-protected endpoint under `/portfolio` on the shared
+ * REST API with explicit GET/POST/PUT/DELETE methods.
  */
 export class DomainPortfolioStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: DomainPortfolioStackProps) {
@@ -46,13 +46,28 @@ export class DomainPortfolioStack extends cdk.NestedStack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     };
 
+    const corsOptions: apigateway.CorsOptions = {
+      allowOrigins: apigateway.Cors.ALL_ORIGINS,
+      allowMethods: apigateway.Cors.ALL_METHODS,
+      allowHeaders: ['Content-Type', 'Authorization'],
+    };
+
     const resource = props.api.root.addResource('portfolio');
+    resource.addCorsPreflight(corsOptions);
 
-    // ANY /portfolio — handles GET/POST on the collection
-    resource.addMethod('ANY', integration, methodOptions);
+    // GET /portfolio — list portfolios
+    resource.addMethod('GET', integration, methodOptions);
+    // POST /portfolio — create portfolio
+    resource.addMethod('POST', integration, methodOptions);
 
-    // ANY /portfolio/{id} — handles GET/PUT/DELETE on a single item
+    // /portfolio/{id}
     const idResource = resource.addResource('{id}');
-    idResource.addMethod('ANY', integration, methodOptions);
+    idResource.addCorsPreflight(corsOptions);
+    // GET /portfolio/{id} — get single portfolio
+    idResource.addMethod('GET', integration, methodOptions);
+    // PUT /portfolio/{id} — update portfolio
+    idResource.addMethod('PUT', integration, methodOptions);
+    // DELETE /portfolio/{id} — delete portfolio
+    idResource.addMethod('DELETE', integration, methodOptions);
   }
 }

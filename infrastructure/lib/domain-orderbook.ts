@@ -25,8 +25,8 @@ export interface DomainOrderbookStackProps extends cdk.NestedStackProps {
  * Orderbook domain stack.
  *
  * Creates a Lambda function (bundled from `src/domains/orderbook/index.ts`)
- * and wires it as a Cognito-protected proxy under `/orderbook` on the shared
- * REST API. All HTTP methods and sub-paths are forwarded to the handler.
+ * and wires it as a Cognito-protected endpoint under `/orderbook` on the shared
+ * REST API with explicit GET/POST/PUT/DELETE methods.
  */
 export class DomainOrderbookStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: DomainOrderbookStackProps) {
@@ -46,13 +46,28 @@ export class DomainOrderbookStack extends cdk.NestedStack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     };
 
+    const corsOptions: apigateway.CorsOptions = {
+      allowOrigins: apigateway.Cors.ALL_ORIGINS,
+      allowMethods: apigateway.Cors.ALL_METHODS,
+      allowHeaders: ['Content-Type', 'Authorization'],
+    };
+
     const resource = props.api.root.addResource('orderbook');
+    resource.addCorsPreflight(corsOptions);
 
-    // ANY /orderbook — handles GET/POST on the collection
-    resource.addMethod('ANY', integration, methodOptions);
+    // GET /orderbook — list orders
+    resource.addMethod('GET', integration, methodOptions);
+    // POST /orderbook — place order
+    resource.addMethod('POST', integration, methodOptions);
 
-    // ANY /orderbook/{id} — handles GET/PUT/DELETE on a single item
+    // /orderbook/{id}
     const idResource = resource.addResource('{id}');
-    idResource.addMethod('ANY', integration, methodOptions);
+    idResource.addCorsPreflight(corsOptions);
+    // GET /orderbook/{id} — get single order
+    idResource.addMethod('GET', integration, methodOptions);
+    // PUT /orderbook/{id} — update order
+    idResource.addMethod('PUT', integration, methodOptions);
+    // DELETE /orderbook/{id} — cancel order
+    idResource.addMethod('DELETE', integration, methodOptions);
   }
 }

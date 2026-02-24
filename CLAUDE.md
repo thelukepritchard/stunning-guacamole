@@ -24,10 +24,22 @@ src/
     │   ├── index.ts
     │   ├── utils.ts
     │   └── routes/
-    └── core/             # Core domain — cross-cutting platform features
-        ├── index.ts
-        ├── utils.ts
-        └── routes/
+    ├── core/             # Core domain — cross-cutting platform features
+    │   ├── index.ts
+    │   ├── utils.ts
+    │   └── routes/
+    └── trading/          # Trading domain — bots, indicators, trade signals
+        ├── index.ts      # Lambda entry point + route dispatch
+        ├── utils.ts      # jsonResponse helper & RouteHandler type
+        ├── types.ts      # Shared types (BotRecord, TradeRecord, IndicatorSnapshot)
+        ├── indicators.ts # Technical indicator calculations (SMA, EMA, RSI, MACD, BB)
+        ├── rule-evaluator.ts  # Recursive rule tree evaluator
+        ├── filter-policy.ts   # SNS filter policy generator
+        ├── routes/       # API route handlers (CRUD bots + trades)
+        └── async/        # Event-driven handlers
+            ├── price-publisher.ts    # EventBridge -> Binance -> SNS
+            ├── bot-executor.ts       # SNS -> rule eval -> trade record
+            └── bot-stream-handler.ts # DynamoDB Streams -> SNS subscriptions
 
 infrastructure/           # AWS CDK v2 project (separate package)
 ├── bin/infrastructure.ts # CDK app entry point
@@ -37,6 +49,7 @@ infrastructure/           # AWS CDK v2 project (separate package)
     ├── domain-portfolio.ts   # Portfolio Lambda + API routes (DomainPortfolioStack)
     ├── domain-orderbook.ts   # Orderbook Lambda + API routes (DomainOrderbookStack)
     ├── domain-core.ts    # Core Lambda + DynamoDB Feedback table + API routes (DomainCoreStack)
+    ├── domain-trading.ts # Trading Lambda (4 functions) + DynamoDB (bots + trades) + SNS + EventBridge (DomainTradingStack)
     ├── auth-page.ts      # S3 + CloudFront for auth page SPA (AuthPageStack)
     ├── webapp.ts         # S3 + CloudFront for authenticated dashboard (WebappStack)
     └── website.ts        # S3 + CloudFront for public marketing site (WebsiteStack)
