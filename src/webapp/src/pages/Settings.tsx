@@ -26,9 +26,14 @@ export default function Settings() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 3 }}>
-        Settings
-      </Typography>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" sx={{ mb: 0.5 }}>
+          Settings
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Manage your account and preferences.
+        </Typography>
+      </Box>
 
       <Stack spacing={3}>
         {/* Profile */}
@@ -42,13 +47,13 @@ export default function Settings() {
               <Box>
                 <Typography variant="subtitle2">Name</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {name || '—'}
+                  {name || '\u2014'}
                 </Typography>
               </Box>
               <Box>
                 <Typography variant="subtitle2">Email</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {email || '—'}
+                  {email || '\u2014'}
                 </Typography>
               </Box>
             </Stack>

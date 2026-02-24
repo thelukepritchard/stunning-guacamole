@@ -2,8 +2,9 @@ import { createTheme, alpha } from '@mui/material/styles';
 import { colors, typography, radii, effects, gradients } from '@shared/styles/tokens';
 
 /**
- * Premium dark trading theme.
+ * Premium dark marketing theme.
  * Built from shared design tokens — glassmorphism, gradient accents, refined surfaces.
+ * Matches the webapp theme for brand consistency.
  */
 const theme = createTheme({
   palette: {
@@ -44,6 +45,14 @@ const theme = createTheme({
 
   typography: {
     fontFamily: typography.fontFamily.sans,
+    h1: {
+      fontWeight: typography.fontWeight.bold,
+      letterSpacing: typography.letterSpacing.tight,
+    },
+    h2: {
+      fontWeight: typography.fontWeight.bold,
+      letterSpacing: typography.letterSpacing.tight,
+    },
     h3: {
       fontWeight: typography.fontWeight.bold,
       letterSpacing: typography.letterSpacing.tight,
@@ -77,8 +86,6 @@ const theme = createTheme({
   },
 
   components: {
-    /* ─── Surfaces ──────────────────────────────────────────── */
-
     MuiCssBaseline: {
       styleOverrides: {
         body: {
@@ -112,29 +119,6 @@ const theme = createTheme({
       },
     },
 
-    MuiDialog: {
-      styleOverrides: {
-        paper: {
-          backgroundImage: gradients.surface,
-          backgroundColor: colors.bg.elevated,
-          borderRadius: radii.xl,
-          border: `1px solid ${colors.border.default}`,
-        },
-      },
-    },
-
-    /* ─── Navigation ────────────────────────────────────────── */
-
-    MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          backgroundColor: alpha(colors.bg.surface, 0.85),
-          backdropFilter: effects.blur.md,
-          borderRight: `1px solid ${colors.border.subtle}`,
-        },
-      },
-    },
-
     MuiAppBar: {
       styleOverrides: {
         root: {
@@ -146,105 +130,6 @@ const theme = createTheme({
         },
       },
     },
-
-    MuiListItemButton: {
-      styleOverrides: {
-        root: {
-          borderRadius: radii.sm,
-          marginInline: 8,
-          transition: effects.transition.fast,
-          '&.Mui-selected': {
-            backgroundColor: alpha(colors.primary.main, 0.1),
-            borderLeft: `2px solid ${colors.primary.main}`,
-            '&:hover': {
-              backgroundColor: alpha(colors.primary.main, 0.15),
-            },
-          },
-          '&:hover': {
-            backgroundColor: alpha(colors.text.primary, 0.04),
-          },
-        },
-      },
-    },
-
-    /* ─── Data display ──────────────────────────────────────── */
-
-    MuiTableCell: {
-      styleOverrides: {
-        root: {
-          borderBottomColor: colors.border.subtle,
-        },
-        head: {
-          fontWeight: typography.fontWeight.semibold,
-          textTransform: 'uppercase',
-          fontSize: '0.7rem',
-          letterSpacing: typography.letterSpacing.wider,
-          color: colors.text.secondary,
-        },
-      },
-    },
-
-    MuiTableRow: {
-      styleOverrides: {
-        root: {
-          transition: effects.transition.fast,
-          '&:hover': {
-            backgroundColor: alpha(colors.text.primary, 0.02),
-          },
-        },
-      },
-    },
-
-    MuiChip: {
-      styleOverrides: {
-        root: {
-          fontWeight: typography.fontWeight.medium,
-          borderRadius: radii.sm,
-        },
-      },
-    },
-
-    MuiDivider: {
-      styleOverrides: {
-        root: {
-          borderColor: colors.border.subtle,
-        },
-      },
-    },
-
-    /* ─── Inputs ────────────────────────────────────────────── */
-
-    MuiOutlinedInput: {
-      styleOverrides: {
-        root: {
-          borderRadius: radii.md,
-          '& .MuiOutlinedInput-notchedOutline': {
-            borderColor: colors.border.default,
-            transition: effects.transition.fast,
-          },
-          '&:hover .MuiOutlinedInput-notchedOutline': {
-            borderColor: colors.border.strong,
-          },
-          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-            borderColor: colors.primary.main,
-            boxShadow: `0 0 0 3px ${alpha(colors.primary.main, 0.12)}`,
-          },
-        },
-      },
-    },
-
-    MuiFormLabel: {
-      styleOverrides: {
-        root: {
-          fontSize: '0.8125rem',
-          fontWeight: typography.fontWeight.medium,
-          color: colors.text.secondary,
-          marginBottom: 6,
-        },
-      },
-    },
-
-    /* ─── Buttons ───────────────────────────────────────────── */
 
     MuiButton: {
       styleOverrides: {
@@ -284,12 +169,19 @@ const theme = createTheme({
       },
     },
 
-    /* ─── Feedback ──────────────────────────────────────────── */
-
-    MuiAlert: {
+    MuiDivider: {
       styleOverrides: {
         root: {
-          borderRadius: radii.md,
+          borderColor: colors.border.subtle,
+        },
+      },
+    },
+
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          fontWeight: typography.fontWeight.medium,
+          borderRadius: radii.sm,
         },
       },
     },

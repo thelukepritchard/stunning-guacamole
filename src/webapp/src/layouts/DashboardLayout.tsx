@@ -25,6 +25,7 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
 import NewReleasesOutlinedIcon from '@mui/icons-material/NewReleasesOutlined';
 import FeedbackDialog from '../components/FeedbackDialog';
+import { gradients, colors } from '@shared/styles/tokens';
 
 const DRAWER_WIDTH = 260;
 
@@ -68,14 +69,24 @@ export default function DashboardLayout() {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* App Title */}
       <Box sx={{ px: 2.5, py: 2.5 }}>
-        <Typography variant="h6" fontWeight={700}>
+        <Typography
+          variant="h6"
+          fontWeight={700}
+          sx={{
+            background: gradients.primary,
+            backgroundClip: 'text',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            letterSpacing: '-0.02em',
+          }}
+        >
           Bot Trading
         </Typography>
       </Box>
       <Divider />
 
       {/* Navigation */}
-      <List dense sx={{ flex: 1, pt: 1 }}>
+      <List dense sx={{ flex: 1, pt: 1.5 }}>
         {NAV_ITEMS.map((item) => (
           <ListItemButton
             key={item.path}
@@ -86,8 +97,16 @@ export default function DashboardLayout() {
             }}
             sx={{ my: 0.5 }}
           >
-            <ListItemIcon sx={{ minWidth: 40 }}>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.label} />
+            <ListItemIcon sx={{ minWidth: 40, color: location.pathname === item.path ? 'primary.main' : 'text.secondary' }}>
+              {item.icon}
+            </ListItemIcon>
+            <ListItemText
+              primary={item.label}
+              primaryTypographyProps={{
+                fontWeight: location.pathname === item.path ? 600 : 400,
+                fontSize: '0.875rem',
+              }}
+            />
           </ListItemButton>
         ))}
       </List>
@@ -132,7 +151,16 @@ export default function DashboardLayout() {
       <Divider />
       <Box sx={{ p: 2 }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
-          <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', fontSize: 14 }}>
+          <Avatar
+            sx={{
+              width: 36,
+              height: 36,
+              fontSize: 14,
+              fontWeight: 600,
+              background: gradients.primary,
+              color: colors.primary.contrast,
+            }}
+          >
             {email ? email[0]!.toUpperCase() : '?'}
           </Avatar>
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -170,7 +198,18 @@ export default function DashboardLayout() {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
+          <Typography
+            variant="h6"
+            noWrap
+            sx={{
+              flexGrow: 1,
+              background: gradients.primary,
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              fontWeight: 700,
+            }}
+          >
             Bot Trading
           </Typography>
           <Button color="inherit" onClick={handleSignOut} size="small">

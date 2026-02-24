@@ -16,6 +16,7 @@ import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import SpeedIcon from '@mui/icons-material/Speed';
+import { gradients } from '@shared/styles/tokens';
 
 /** Feature bullet for the left content panel. */
 function Feature({ icon, text }: { icon: React.ReactNode; text: string }) {
@@ -137,7 +138,11 @@ export default function Register() {
       sx={{
         display: 'flex',
         minHeight: '100vh',
-        background: 'radial-gradient(ellipse at 50% 50%, rgba(33,150,243,0.08) 0%, transparent 60%)',
+        background: `
+          radial-gradient(ellipse at 20% 50%, rgba(0,198,251,0.06) 0%, transparent 50%),
+          radial-gradient(ellipse at 80% 20%, rgba(167,139,250,0.05) 0%, transparent 40%),
+          radial-gradient(ellipse at 50% 100%, rgba(0,91,234,0.04) 0%, transparent 50%)
+        `,
       }}
     >
       {/* Left — Branding Content */}
@@ -153,7 +158,16 @@ export default function Register() {
         }}
       >
         <Box sx={{ maxWidth: 480 }}>
-          <Typography variant="h3" fontWeight={700}>
+          <Typography
+            variant="h3"
+            fontWeight={700}
+            sx={{
+              background: gradients.primary,
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
             No-code Bot Trading
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>

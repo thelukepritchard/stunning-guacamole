@@ -3,7 +3,7 @@ import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import { useTheme } from '@mui/material/styles';
+import { useTheme, alpha } from '@mui/material/styles';
 import { SparkLineChart } from '@mui/x-charts/SparkLineChart';
 import { areaElementClasses } from '@mui/x-charts/LineChart';
 import type { Trend } from '../data/mockData';
@@ -39,13 +39,20 @@ function useTrendInfo(trend: Trend) {
 
 /**
  * Dashboard stat card with title, value, trend chip, and sparkline chart.
- * Adapted from the MUI dashboard template StatCard pattern.
+ * Uses glassmorphism styling with a coloured top accent border.
  */
 export default function StatCard({ title, value, interval, trend, trendLabel, data }: StatCardProps) {
   const trendInfo = useTrendInfo(trend);
 
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Card
+      sx={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        borderTop: `2px solid ${alpha(trendInfo.color, 0.5)}`,
+      }}
+    >
       <CardContent sx={{ flex: 1 }}>
         <Typography variant="subtitle2" gutterBottom>
           {title}
@@ -54,7 +61,7 @@ export default function StatCard({ title, value, interval, trend, trendLabel, da
           <Typography variant="h4" component="p">
             {value}
           </Typography>
-          <Chip size="small" color={trendInfo.chipColor} label={trendLabel} />
+          <Chip size="small" color={trendInfo.chipColor} label={trendLabel} variant="outlined" />
         </Stack>
         <Typography variant="caption" color="text.secondary">
           {interval}

@@ -8,9 +8,13 @@ These trading bots can then be deployed on exchanges such as Binance.
 
 ```
 src/
+├── shared/               # Framework-agnostic shared code
+│   └── styles/           # Shared design system (tokens + global CSS)
+│       ├── tokens.ts     # TypeScript design tokens (colours, typography, effects)
+│       └── global.css    # CSS custom properties + global base styles
 ├── auth-page/            # Single-page app for authentication flows
 ├── webapp/               # Vite + React 19 authenticated dashboard (Cognito-gated)
-├── website/              # Next.js 15 public marketing site
+├── website/              # Vite + React 19 public marketing site
 └── domains/              # Backend domain logic (Lambda handlers)
     ├── portfolio/        # Portfolio domain — CRUD via API Gateway
     │   ├── index.ts      # Lambda entry point + route dispatch
@@ -46,7 +50,17 @@ infrastructure/           # AWS CDK v2 project (separate package)
 - **API:** API Gateway REST API with Cognito authorizer
 - **Compute:** Lambda (bundled via `NodejsFunction` / esbuild)
 - **Webapp:** Vite + React 19 + Material UI 6 + React Router 7
+- **Website:** Vite + React 19 + Material UI 6 + React Router 7
 - **Region:** ap-southeast-2
+
+## Shared Styles
+
+Design tokens and global CSS live in `src/shared/styles/` and are shared between the webapp and website.
+
+- **`tokens.ts`** — TypeScript constants for colours, typography, gradients, effects, radii. Import as `@shared/styles/tokens` (via path alias).
+- **`global.css`** — CSS custom properties (mirroring the tokens) plus global base styles (scrollbar, selection, font smoothing). Import as `@shared/styles/global.css`.
+- **Webapp integration** — The `@shared` alias is configured in both `vite.config.ts` (resolve alias) and `tsconfig.json` (paths). The MUI theme (`src/webapp/src/theme.ts`) is built from the shared tokens.
+- **Website integration** — The `@shared` alias is configured in both `vite.config.ts` (resolve alias) and `tsconfig.json` (paths). The MUI theme (`src/website/src/theme.ts`) is built from the shared tokens.
 
 ## Coding Standards
 
@@ -59,3 +73,4 @@ infrastructure/           # AWS CDK v2 project (separate package)
 - See `infrastructure/CLAUDE.md` for CDK stacks, commands, and adding new stacks
 - See `src/domains/CLAUDE.md` for domain handler patterns, testing, and adding new domains
 - See `src/webapp/CLAUDE.md` for webapp commands
+- See `src/website/CLAUDE.md` for website commands

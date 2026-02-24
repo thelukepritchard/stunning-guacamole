@@ -15,6 +15,7 @@ import { LineChart } from '@mui/x-charts/LineChart';
 import { BarChart } from '@mui/x-charts/BarChart';
 import StatCard from '../components/StatCard';
 import { dashboardStats, performanceData, volumeData, recentTrades } from '../data/mockData';
+import { typography } from '@shared/styles/tokens';
 
 /** Dashboard landing page with stats, charts, and recent trades. */
 export default function Dashboard() {
@@ -22,9 +23,14 @@ export default function Dashboard() {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 3 }}>
-        Overview
-      </Typography>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h5" sx={{ mb: 0.5 }}>
+          Overview
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Track your portfolio, bots, and recent activity.
+        </Typography>
+      </Box>
 
       {/* Stat Cards */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
@@ -141,7 +147,7 @@ export default function Dashboard() {
             <TableBody>
               {recentTrades.map((trade, i) => (
                 <TableRow key={i}>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>{trade.time}</TableCell>
+                  <TableCell sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>{trade.time}</TableCell>
                   <TableCell>{trade.pair}</TableCell>
                   <TableCell>
                     <Chip
@@ -151,13 +157,13 @@ export default function Dashboard() {
                       variant="outlined"
                     />
                   </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                  <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                     {trade.price.toLocaleString()}
                   </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                  <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                     {trade.amount}
                   </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                  <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                     ${trade.total.toLocaleString()}
                   </TableCell>
                   <TableCell>{trade.bot}</TableCell>

@@ -11,15 +11,21 @@ import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import { PieChart } from '@mui/x-charts/PieChart';
 import { portfolios, allocationData, holdings } from '../data/mockData';
+import { typography } from '@shared/styles/tokens';
 
 /** Portfolios page with summary cards, allocation chart, and holdings table. */
 export default function Portfolios() {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 3 }}>
-        Portfolios
-      </Typography>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h5" sx={{ mb: 0.5 }}>
+          Portfolios
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Manage your portfolios and track asset allocation.
+        </Typography>
+      </Box>
 
       {/* Portfolio Summary Cards */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
@@ -114,22 +120,23 @@ export default function Portfolios() {
                       <TableCell>
                         <Typography fontWeight={600}>{h.asset}</Typography>
                       </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                      <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         {h.amount}
                       </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                      <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         ${h.avgCost.toLocaleString()}
                       </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                      <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         ${h.price.toLocaleString()}
                       </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                      <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         ${h.value.toLocaleString()}
                       </TableCell>
                       <TableCell
                         align="right"
                         sx={{
-                          fontFamily: 'monospace',
+                          fontFamily: typography.fontFamily.mono,
+                          fontSize: '0.8125rem',
                           fontWeight: 600,
                           color: h.pnl >= 0 ? 'success.main' : 'error.main',
                         }}

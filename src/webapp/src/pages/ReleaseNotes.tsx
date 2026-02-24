@@ -41,9 +41,14 @@ const TAG_COLOUR: Record<Release['tag'], 'primary' | 'success' | 'warning'> = {
 export default function ReleaseNotes() {
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 3 }}>
-        Release Notes
-      </Typography>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" sx={{ mb: 0.5 }}>
+          Release Notes
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          What&apos;s new in the platform.
+        </Typography>
+      </Box>
 
       <Stack spacing={3} sx={{ maxWidth: 700 }}>
         {RELEASES.map((release) => (
@@ -51,7 +56,7 @@ export default function ReleaseNotes() {
             <CardContent sx={{ p: 3 }}>
               <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 1 }}>
                 <Typography variant="h6">v{release.version}</Typography>
-                <Chip label={release.tag} color={TAG_COLOUR[release.tag]} size="small" />
+                <Chip label={release.tag} color={TAG_COLOUR[release.tag]} size="small" variant="outlined" />
               </Stack>
               <Typography variant="caption" color="text.secondary">
                 {release.date}

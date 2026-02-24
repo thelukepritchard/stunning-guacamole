@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { bids, asks, depthData, recentFills } from '../data/mockData';
+import { typography } from '@shared/styles/tokens';
 
 /** Orderbook page with buy/sell tables, depth chart, and recent fills. */
 export default function Orderbook() {
@@ -23,10 +24,19 @@ export default function Orderbook() {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, mb: 3 }}>
-        <Typography variant="h5">BTC / USDT</Typography>
-        <Typography variant="h6" color="text.secondary" fontFamily="monospace">
-          ${Number(midPrice).toLocaleString()}
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, mb: 0.5 }}>
+          <Typography variant="h5">BTC / USDT</Typography>
+          <Typography
+            variant="h6"
+            color="text.secondary"
+            sx={{ fontFamily: typography.fontFamily.mono }}
+          >
+            ${Number(midPrice).toLocaleString()}
+          </Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary">
+          Live orderbook and recent market fills.
         </Typography>
       </Box>
 
@@ -51,13 +61,13 @@ export default function Orderbook() {
                 <TableBody>
                   {bids.map((entry, i) => (
                     <TableRow key={i}>
-                      <TableCell sx={{ color: 'success.main', fontFamily: 'monospace' }}>
+                      <TableCell sx={{ color: 'success.main', fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         {entry.price.toLocaleString(undefined, { minimumFractionDigits: 1 })}
                       </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                      <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         {entry.amount.toFixed(3)}
                       </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                      <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         ${entry.total.toLocaleString()}
                       </TableCell>
                     </TableRow>
@@ -87,13 +97,13 @@ export default function Orderbook() {
                 <TableBody>
                   {asks.map((entry, i) => (
                     <TableRow key={i}>
-                      <TableCell sx={{ color: 'error.main', fontFamily: 'monospace' }}>
+                      <TableCell sx={{ color: 'error.main', fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         {entry.price.toLocaleString(undefined, { minimumFractionDigits: 1 })}
                       </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                      <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         {entry.amount.toFixed(3)}
                       </TableCell>
-                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                      <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                         ${entry.total.toLocaleString()}
                       </TableCell>
                     </TableRow>
@@ -170,11 +180,11 @@ export default function Orderbook() {
             <TableBody>
               {recentFills.map((fill, i) => (
                 <TableRow key={i}>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>{fill.time}</TableCell>
-                  <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                  <TableCell sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>{fill.time}</TableCell>
+                  <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                     {fill.price.toLocaleString(undefined, { minimumFractionDigits: 1 })}
                   </TableCell>
-                  <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                  <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                     {fill.amount.toFixed(3)}
                   </TableCell>
                   <TableCell>

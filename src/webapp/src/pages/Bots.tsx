@@ -17,6 +17,7 @@ import { QueryBuilder, type RuleGroupType } from 'react-querybuilder';
 import { QueryBuilderMaterial } from '@react-querybuilder/material';
 import { botFields } from '../data/botFields';
 import { bots as initialBots, tradingPairs, type Bot, type BotAction, type BotStatus } from '../data/mockData';
+import { colors } from '@shared/styles/tokens';
 
 /** Status chip colour mapping. */
 const statusColor: Record<BotStatus, 'success' | 'warning' | 'default'> = {
@@ -174,8 +175,8 @@ export default function Bots() {
               gap: 1,
             },
             '& .ruleGroup .ruleGroup': {
-              bgcolor: 'rgba(25, 118, 210, 0.04)',
-              borderColor: 'rgba(25, 118, 210, 0.2)',
+              bgcolor: `${colors.primary.main}06`,
+              borderColor: `${colors.primary.main}33`,
             },
             '& .ruleGroup-header, & .rule': {
               display: 'flex',
@@ -244,8 +245,15 @@ export default function Bots() {
   return (
     <Box>
       {/* Header */}
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 3 }}>
-        <Typography variant="h5">Bots</Typography>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 4 }}>
+        <Box>
+          <Typography variant="h5" sx={{ mb: 0.5 }}>
+            Bots
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Create and manage your automated trading strategies.
+          </Typography>
+        </Box>
         <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreate}>
           Create Bot
         </Button>
