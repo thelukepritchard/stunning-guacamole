@@ -5,6 +5,7 @@ import { AuthStack } from '../lib/auth';
 import { RestApiStack } from '../lib/rest-api';
 import { DomainPortfolioStack } from '../lib/domain-portfolio';
 import { DomainOrderbookStack } from '../lib/domain-orderbook';
+import { DomainCoreStack } from '../lib/domain-core';
 import { AuthPageStack } from '../lib/auth-page';
 import { WebappStack } from '../lib/webapp';
 import { WebsiteStack } from '../lib/website';
@@ -43,6 +44,12 @@ class InfrastructureStack extends cdk.Stack {
     });
 
     new DomainOrderbookStack(this, `DomainOrderbookStack`, {
+      environment,
+      api: restApi.api,
+      authorizer: restApi.authorizer,
+    });
+
+    new DomainCoreStack(this, `DomainCoreStack`, {
       environment,
       api: restApi.api,
       authorizer: restApi.authorizer,

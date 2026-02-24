@@ -12,7 +12,7 @@ export interface AuthStackProps extends cdk.NestedStackProps {
 /**
  * Cognito authentication stack.
  *
- * Creates a User Pool with self-sign-up disabled and a User Pool Client
+ * Creates a User Pool with self-sign-up enabled and a User Pool Client
  * for API access.
  */
 export class AuthStack extends cdk.NestedStack {
@@ -28,7 +28,8 @@ export class AuthStack extends cdk.NestedStack {
 
     this.userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: `UserPool-${props.environment}`,
-      selfSignUpEnabled: false,
+      selfSignUpEnabled: true,
+      autoVerify: { email: true },
       signInAliases: { email: true },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
