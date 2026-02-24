@@ -16,6 +16,8 @@ import Typography from '@mui/material/Typography';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import { gradients, colors } from '@shared/styles/tokens';
+/** Base URL for the authenticated webapp (no trailing slash). */
+const WEBAPP_URL = import.meta.env.VITE_WEBAPP_URL as string;
 
 /** Navigation links shown in the header. */
 const NAV_LINKS = [
@@ -74,10 +76,10 @@ export default function MarketingLayout() {
 
             {/* Desktop CTA */}
             <Stack direction="row" spacing={1.5} sx={{ display: { xs: 'none', md: 'flex' } }}>
-              <Button variant="outlined" size="small" href="/sign-in">
+              <Button variant="outlined" size="small" href={`${WEBAPP_URL}/sign-in`}>
                 Sign in
               </Button>
-              <Button variant="contained" size="small" href="/register">
+              <Button variant="contained" size="small" href={`${WEBAPP_URL}/register`}>
                 Get started
               </Button>
             </Stack>
@@ -119,10 +121,10 @@ export default function MarketingLayout() {
           ))}
         </List>
         <Stack spacing={1.5} sx={{ p: 2 }}>
-          <Button variant="outlined" fullWidth href="/sign-in">
+          <Button variant="outlined" fullWidth href={`${WEBAPP_URL}/sign-in`}>
             Sign in
           </Button>
-          <Button variant="contained" fullWidth href="/register">
+          <Button variant="contained" fullWidth href={`${WEBAPP_URL}/register`}>
             Get started
           </Button>
         </Stack>
@@ -182,10 +184,10 @@ export default function MarketingLayout() {
                   Account
                 </Typography>
                 <Stack spacing={0.5}>
-                  <Typography variant="body2" color="text.secondary" component="a" href="/sign-in" sx={{ cursor: 'pointer', textDecoration: 'none', '&:hover': { color: 'primary.main' } }}>
+                  <Typography variant="body2" color="text.secondary" component="a" href={`${WEBAPP_URL}/sign-in`} sx={{ cursor: 'pointer', textDecoration: 'none', '&:hover': { color: 'primary.main' } }}>
                     Sign in
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" component="a" href="/register" sx={{ cursor: 'pointer', textDecoration: 'none', '&:hover': { color: 'primary.main' } }}>
+                  <Typography variant="body2" color="text.secondary" component="a" href={`${WEBAPP_URL}/register`} sx={{ cursor: 'pointer', textDecoration: 'none', '&:hover': { color: 'primary.main' } }}>
                     Register
                   </Typography>
                 </Stack>

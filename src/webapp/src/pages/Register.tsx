@@ -38,7 +38,8 @@ export default function Register() {
   const navigate = useNavigate();
   const [step, setStep] = useState<'register' | 'confirm'>('register');
   const [email, setEmail] = useState('');
-  const [nameError, setNameError] = useState(false);
+  const [firstNameError, setFirstNameError] = useState(false);
+  const [lastNameError, setLastNameError] = useState(false);
   const [emailError, setEmailError] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [codeError, setCodeError] = useState(false);
@@ -49,17 +50,24 @@ export default function Register() {
   const handleRegister = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
-    const name = (data.get('name') as string).trim();
+    const firstName = (data.get('firstName') as string).trim();
+    const lastName = (data.get('lastName') as string).trim();
     const emailVal = (data.get('email') as string).trim();
     const password = data.get('password') as string;
     const confirmPassword = data.get('confirmPassword') as string;
 
     let valid = true;
-    if (!name) {
-      setNameError(true);
+    if (!firstName) {
+      setFirstNameError(true);
       valid = false;
     } else {
-      setNameError(false);
+      setFirstNameError(false);
+    }
+    if (!lastName) {
+      setLastNameError(true);
+      valid = false;
+    } else {
+      setLastNameError(false);
     }
     if (!emailVal || !/\S+@\S+\.\S+/.test(emailVal)) {
       setEmailError(true);
@@ -87,7 +95,7 @@ export default function Register() {
         username: emailVal,
         password,
         options: {
-          userAttributes: { email: emailVal, name },
+          userAttributes: { email: emailVal, given_name: firstName, family_name: lastName },
           autoSignIn: true,
         },
       });
@@ -207,21 +215,37 @@ export default function Register() {
                   Create account
                 </Typography>
                 <Box component="form" onSubmit={handleRegister} noValidate sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                  <FormControl>
-                    <FormLabel htmlFor="name">Name</FormLabel>
-                    <TextField
-                      id="name"
-                      name="name"
-                      type="text"
-                      placeholder="John Doe"
-                      autoComplete="name"
-                      autoFocus
-                      fullWidth
-                      size="small"
-                      error={nameError}
-                      helperText={nameError ? 'Please enter your name' : ''}
-                    />
-                  </FormControl>
+                  <Stack direction="row" spacing={2}>
+                    <FormControl sx={{ flex: 1 }}>
+                      <FormLabel htmlFor="firstName">First name</FormLabel>
+                      <TextField
+                        id="firstName"
+                        name="firstName"
+                        type="text"
+                        placeholder="John"
+                        autoComplete="given-name"
+                        autoFocus
+                        fullWidth
+                        size="small"
+                        error={firstNameError}
+                        helperText={firstNameError ? 'Required' : ''}
+                      />
+                    </FormControl>
+                    <FormControl sx={{ flex: 1 }}>
+                      <FormLabel htmlFor="lastName">Last name</FormLabel>
+                      <TextField
+                        id="lastName"
+                        name="lastName"
+                        type="text"
+                        placeholder="Doe"
+                        autoComplete="family-name"
+                        fullWidth
+                        size="small"
+                        error={lastNameError}
+                        helperText={lastNameError ? 'Required' : ''}
+                      />
+                    </FormControl>
+                  </Stack>
 
                   <FormControl>
                     <FormLabel htmlFor="email">Email</FormLabel>

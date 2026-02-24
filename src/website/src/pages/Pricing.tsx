@@ -10,6 +10,8 @@ import Typography from '@mui/material/Typography';
 import CheckIcon from '@mui/icons-material/Check';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { gradients, colors, effects } from '@shared/styles/tokens';
+/** Base URL for the authenticated webapp (no trailing slash). */
+const WEBAPP_URL = import.meta.env.VITE_WEBAPP_URL as string;
 
 /** Plan definition. */
 interface Plan {
@@ -198,7 +200,7 @@ export default function Pricing() {
                       size="large"
                       fullWidth
                       endIcon={<ArrowForwardIcon />}
-                      href="/register"
+                      href={`${WEBAPP_URL}/register`}
                     >
                       {plan.cta}
                     </Button>
@@ -248,7 +250,7 @@ export default function Pricing() {
             variant="contained"
             size="large"
             endIcon={<ArrowForwardIcon />}
-            href="/register"
+            href={`${WEBAPP_URL}/register`}
             sx={{ px: 5, py: 1.5 }}
           >
             Create your free account

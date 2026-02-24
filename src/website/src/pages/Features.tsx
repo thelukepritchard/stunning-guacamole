@@ -22,6 +22,8 @@ import DevicesIcon from '@mui/icons-material/Devices';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { gradients, colors, effects } from '@shared/styles/tokens';
+/** Base URL for the authenticated webapp (no trailing slash). */
+const WEBAPP_URL = import.meta.env.VITE_WEBAPP_URL as string;
 
 /** Full feature set with categories. */
 const FEATURE_SECTIONS = [
@@ -254,7 +256,7 @@ export default function Features() {
             variant="contained"
             size="large"
             endIcon={<ArrowForwardIcon />}
-            href="/register"
+            href={`${WEBAPP_URL}/register`}
             sx={{ px: 5, py: 1.5 }}
           >
             Get started free
