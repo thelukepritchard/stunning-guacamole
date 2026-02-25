@@ -15,6 +15,7 @@ import BotView from './pages/BotView';
 import Leaderboard from './pages/Leaderboard';
 import Settings from './pages/Settings';
 import ReleaseNotes from './pages/ReleaseNotes';
+import NotFound from './pages/NotFound';
 
 /** Root application component with routing and theme. */
 export default function App() {
@@ -42,7 +43,9 @@ export default function App() {
             <Route path="bots/view/:botId" element={<BotView />} />
             <Route path="settings" element={<Settings />} />
             <Route path="release-notes" element={<ReleaseNotes />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>

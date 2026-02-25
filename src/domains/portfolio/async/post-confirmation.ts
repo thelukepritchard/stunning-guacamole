@@ -20,11 +20,14 @@ export async function handler(
   event: PostConfirmationConfirmSignUpTriggerEvent,
 ): Promise<PostConfirmationConfirmSignUpTriggerEvent> {
   const sub = event.request.userAttributes.sub;
-  const email = event.request.userAttributes.email ?? '';
+  const username = event.request.userAttributes.preferred_username;
+  if (!username) {
+    throw new Error('preferred_username is required on post-confirmation');
+  }
 
   const record: PortfolioRecord = {
     sub,
-    email,
+    username,
     createdAt: new Date().toISOString(),
   };
 

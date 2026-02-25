@@ -17,7 +17,10 @@
   - To-Do & Known Issues: `3115ae86-48e7-8104-a6d7-e66b58a59774`
   - Exchange Configuration: `3115ae86-48e7-81d8-9600-ea5f2e0b5468`
   - Overview & Target Audience: `3115ae86-48e7-81fe-ba15-d60b41a086e8`
-  - Leaderboard & Copy Trading: `3115ae86-48e7-8143-bc4a-e15c3d808add`
+  - Leaderboard & Copy Trading (feature spec): `3115ae86-48e7-8143-bc4a-e15c3d808add`
+  - Product Specs: `3115ae86-48e7-81e3-bffd-c973f8c10490`
+    - Overview & Target Audience: `3115ae86-48e7-81fe-ba15-d60b41a086e8`
+    - Design Decisions: `3115ae86-48e7-81a3-9601-fb019823ca09`
 
 ## Key Documentation Locations
 
@@ -27,6 +30,12 @@
 - **Portfolio performance recorder**: Portfolio Domain page — reads bot-performance table directly via sub-index GSI
 - **Bot configuration**: Bot Configuration page (`3115ae86-48e7-819b-b327-ca5854220443`)
 - **Exchange configuration**: Exchange Configuration page (`3115ae86-48e7-81d8-9600-ea5f2e0b5468`)
+
+## Documentation Gaps
+
+- **Username/display name**: No dedicated spec page. The only mention is in Leaderboard & Copy Trading feature page ("Trader username / display name" in leaderboard row display). No requirements for username format, validation, or storage location are documented.
+- **Signup flow**: No dedicated auth or signup flow documentation page exists anywhere in the workspace.
+- **Portfolio table lacks username**: The `{name}-{env}-portfolio` DynamoDB table schema only stores `sub`, `email`, and `createdAt` — no username field documented.
 
 ## Architecture Patterns
 

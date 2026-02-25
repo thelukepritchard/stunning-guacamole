@@ -103,7 +103,7 @@ export default function DashboardLayout() {
               letterSpacing: '-0.02em',
             }}
           >
-            Bot Trading
+            Signalr
           </Typography>
           {isDemoMode && (
             <Tooltip
@@ -258,7 +258,7 @@ export default function DashboardLayout() {
               fontWeight: 700,
             }}
           >
-            Bot Trading
+            Signalr
           </Typography>
           <Button color="inherit" onClick={handleSignOut} size="small">
             Sign out

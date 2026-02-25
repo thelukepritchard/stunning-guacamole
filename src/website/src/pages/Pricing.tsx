@@ -27,49 +27,47 @@ interface Plan {
 /** Pricing tiers. */
 const PLANS: Plan[] = [
   {
-    name: 'Starter',
+    name: 'Free',
     price: '$0',
     period: '/month',
     description: 'Perfect for getting started with automated trading.',
     features: [
-      'Up to 2 active bots',
-      '1 exchange connection',
-      'Basic rule builder',
-      'Daily performance reports',
-      'Community support',
+      'Up to 3 active bots',
+      'Swyftx exchange',
+      'Full indicator access (RSI, MACD, EMA, SMA, BB, Volume)',
+      'Natural language bot builder',
     ],
     cta: 'Get started free',
   },
   {
     name: 'Pro',
-    price: '$49',
+    price: '$19',
     period: '/month',
-    description: 'For serious traders who want full control.',
+    description: 'For serious traders who want more bots and exchanges.',
     features: [
-      'Unlimited active bots',
-      '5 exchange connections',
-      'Advanced rule builder with indicators',
-      'Real-time alerts & notifications',
-      'Backtesting with historical data',
-      'Priority support',
+      'Up to 10 active bots',
+      'All Phase 1 exchanges (Swyftx, CoinSpot, CoinJar)',
+      'Full indicator access (RSI, MACD, EMA, SMA, BB, Volume)',
+      'Natural language bot builder',
+      'Mirror kickback programme',
     ],
-    cta: 'Start 14-day free trial',
+    cta: 'Start with Pro',
     highlighted: true,
   },
   {
-    name: 'Enterprise',
-    price: 'Custom',
-    period: '',
-    description: 'For teams and institutions with custom needs.',
+    name: 'Elite',
+    price: '$49',
+    period: '/month',
+    description: 'Unlimited bots, all exchanges, and AI-powered insights.',
     features: [
-      'Everything in Pro',
-      'Unlimited exchange connections',
-      'Dedicated infrastructure',
-      'Custom integrations & API access',
-      'Dedicated account manager',
-      'SLA guarantee',
+      'Unlimited active bots',
+      'All exchanges (Phase 1 + Phase 2 as released)',
+      'Full indicator access (RSI, MACD, EMA, SMA, BB, Volume)',
+      'Natural language bot builder',
+      'AI trade analysis & performance insights',
+      'Mirror kickback programme',
     ],
-    cta: 'Contact sales',
+    cta: 'Go Elite',
   },
 ];
 
@@ -80,16 +78,20 @@ const FAQS = [
     answer: 'Yes. You can upgrade or downgrade your plan at any time. Changes take effect at the start of your next billing cycle.',
   },
   {
-    question: 'Is there a free trial for Pro?',
-    answer: 'Yes — Pro comes with a 14-day free trial. No credit card required to start.',
+    question: 'What happens if I downgrade?',
+    answer: 'If you exceed the limits of your new tier (e.g. too many active bots), your existing bots will be paused — never deleted. You can re-enable them by upgrading again.',
   },
   {
     question: 'What exchanges do you support?',
-    answer: 'We currently support Binance, with more exchanges coming soon including Coinbase, Kraken, and Bybit.',
+    answer: 'Phase 1 exchanges include Swyftx, CoinSpot, and CoinJar. More exchanges are being added in Phase 2. Free users have access to Swyftx, Pro to all Phase 1, and Elite to all exchanges.',
   },
   {
     question: 'How do you handle my API keys?',
     answer: 'All API keys are encrypted at rest using AES-256 and transmitted over TLS. We only request trade permissions — never withdrawal access.',
+  },
+  {
+    question: 'What is the Mirror Kickback Programme?',
+    answer: 'Paid-tier traders earn credit when other paid users mirror their portfolio. You accrue 20% of each copier\'s monthly subscription fee as billing credit, calculated hourly.',
   },
 ] as const;
 
@@ -105,7 +107,7 @@ export default function Pricing() {
           pt: { xs: 8, md: 12 },
           pb: { xs: 6, md: 8 },
           background: `
-            radial-gradient(ellipse at 30% 50%, rgba(0,198,251,0.06) 0%, transparent 50%),
+            radial-gradient(ellipse at 30% 50%, rgba(139,92,246,0.06) 0%, transparent 50%),
             radial-gradient(ellipse at 70% 20%, rgba(167,139,250,0.05) 0%, transparent 40%)
           `,
         }}

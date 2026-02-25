@@ -130,7 +130,7 @@ export default function Features() {
           pt: { xs: 8, md: 12 },
           pb: { xs: 6, md: 8 },
           background: `
-            radial-gradient(ellipse at 30% 50%, rgba(0,198,251,0.06) 0%, transparent 50%),
+            radial-gradient(ellipse at 30% 50%, rgba(139,92,246,0.06) 0%, transparent 50%),
             radial-gradient(ellipse at 70% 20%, rgba(167,139,250,0.05) 0%, transparent 40%)
           `,
         }}

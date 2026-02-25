@@ -6,6 +6,7 @@ import MarketingLayout from './layouts/MarketingLayout';
 import Home from './pages/Home';
 import Features from './pages/Features';
 import Pricing from './pages/Pricing';
+import NotFound from './pages/NotFound';
 
 /**
  * Root component for the public marketing website.
@@ -21,6 +22,7 @@ export default function App() {
             <Route index element={<Home />} />
             <Route path="features" element={<Features />} />
             <Route path="pricing" element={<Pricing />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </BrowserRouter>

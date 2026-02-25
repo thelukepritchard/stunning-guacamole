@@ -64,7 +64,7 @@ describe('portfolio route handlers', () => {
   describe('listPortfolios', () => {
     /** Verifies the authenticated user's portfolio is returned when found. */
     it('returns 200 with the portfolio item when found', async () => {
-      const mockPortfolio = { sub: 'user-123', email: 'user@example.com', createdAt: '2026-01-01T00:00:00Z' };
+      const mockPortfolio = { sub: 'user-123', username: 'testuser', createdAt: '2026-01-01T00:00:00Z' };
       mockSend.mockResolvedValueOnce({ Item: mockPortfolio });
 
       const result = await listPortfolios(buildRouteEvent());
@@ -72,7 +72,7 @@ describe('portfolio route handlers', () => {
 
       expect(result.statusCode).toBe(200);
       expect(body.sub).toBe('user-123');
-      expect(body.email).toBe('user@example.com');
+      expect(body.username).toBe('testuser');
     });
 
     /** Verifies 404 is returned when no portfolio record exists. */
@@ -187,8 +187,8 @@ describe('portfolio route handlers', () => {
     /** Verifies a ranked leaderboard is returned when users have performance data. */
     it('returns 200 with ranked leaderboard entries', async () => {
       const users = [
-        { sub: 'user-abc', email: 'alice@example.com', createdAt: '2026-01-01T00:00:00Z' },
-        { sub: 'user-def', email: 'bob@example.com', createdAt: '2026-01-01T00:00:00Z' },
+        { sub: 'user-abc', username: 'alice', createdAt: '2026-01-01T00:00:00Z' },
+        { sub: 'user-def', username: 'bob', createdAt: '2026-01-01T00:00:00Z' },
       ];
       // ScanCommand for users
       mockSend.mockResolvedValueOnce({ Items: users, LastEvaluatedKey: undefined });
@@ -209,17 +209,18 @@ describe('portfolio route handlers', () => {
       expect(result.statusCode).toBe(200);
       expect(body.items).toHaveLength(2);
       // Ranked by pnl24h descending — alice (200) before bob (100)
-      expect(body.items[0].sub).toBe('user-abc');
+      expect(body.items[0].username).toBe('alice');
       expect(body.items[0].rank).toBe(1);
-      expect(body.items[1].sub).toBe('user-def');
+      expect(body.items[0].sub).toBeUndefined();
+      expect(body.items[1].username).toBe('bob');
       expect(body.items[1].rank).toBe(2);
     });
 
     /** Verifies users with no performance data are excluded from the leaderboard. */
     it('excludes users with no performance snapshots', async () => {
       const users = [
-        { sub: 'user-abc', email: 'alice@example.com', createdAt: '2026-01-01T00:00:00Z' },
-        { sub: 'user-def', email: 'bob@example.com', createdAt: '2026-01-01T00:00:00Z' },
+        { sub: 'user-abc', username: 'alice', createdAt: '2026-01-01T00:00:00Z' },
+        { sub: 'user-def', username: 'bob', createdAt: '2026-01-01T00:00:00Z' },
       ];
       mockSend.mockResolvedValueOnce({ Items: users, LastEvaluatedKey: undefined });
       // user-abc has performance
@@ -236,7 +237,7 @@ describe('portfolio route handlers', () => {
 
       expect(result.statusCode).toBe(200);
       expect(body.items).toHaveLength(1);
-      expect(body.items[0].sub).toBe('user-abc');
+      expect(body.items[0].username).toBe('alice');
     });
 
     /** Verifies custom limit query parameter is respected (up to max 100). */
@@ -257,7 +258,7 @@ describe('portfolio route handlers', () => {
     it('caps limit at 100', async () => {
       const manyUsers = Array.from({ length: 110 }, (_, i) => ({
         sub: `user-${i}`,
-        email: `user${i}@example.com`,
+        username: `user${i}`,
         createdAt: '2026-01-01T00:00:00Z',
       }));
       mockSend.mockResolvedValueOnce({ Items: manyUsers, LastEvaluatedKey: undefined });
@@ -293,8 +294,8 @@ describe('portfolio route handlers', () => {
 
     /** Verifies pagination is handled when the user scan spans multiple pages. */
     it('paginates the user scan when LastEvaluatedKey is set', async () => {
-      const page1Users = [{ sub: 'user-1', email: 'u1@example.com', createdAt: '2026-01-01T00:00:00Z' }];
-      const page2Users = [{ sub: 'user-2', email: 'u2@example.com', createdAt: '2026-01-01T00:00:00Z' }];
+      const page1Users = [{ sub: 'user-1', username: 'user1', createdAt: '2026-01-01T00:00:00Z' }];
+      const page2Users = [{ sub: 'user-2', username: 'user2', createdAt: '2026-01-01T00:00:00Z' }];
 
       // First ScanCommand returns partial result with a LastEvaluatedKey
       mockSend.mockResolvedValueOnce({ Items: page1Users, LastEvaluatedKey: { sub: 'user-1' } });

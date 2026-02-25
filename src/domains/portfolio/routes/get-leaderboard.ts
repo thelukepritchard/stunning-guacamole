@@ -63,8 +63,7 @@ export async function getLeaderboard(
         if (!perf) return null;
 
         return {
-          sub: user.sub,
-          email: user.email,
+          username: user.username,
           activeBots: perf.activeBots,
           totalNetPnl: perf.totalNetPnl,
           pnl24h: perf.pnl24h,

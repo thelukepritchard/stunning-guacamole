@@ -88,9 +88,9 @@ export default function Home() {
           pt: { xs: 10, md: 16 },
           pb: { xs: 10, md: 14 },
           background: `
-            radial-gradient(ellipse at 20% 50%, rgba(0,198,251,0.08) 0%, transparent 50%),
+            radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.08) 0%, transparent 50%),
             radial-gradient(ellipse at 80% 20%, rgba(167,139,250,0.06) 0%, transparent 40%),
-            radial-gradient(ellipse at 50% 100%, rgba(0,91,234,0.05) 0%, transparent 50%)
+            radial-gradient(ellipse at 50% 100%, rgba(76,29,149,0.05) 0%, transparent 50%)
           `,
         }}
       >

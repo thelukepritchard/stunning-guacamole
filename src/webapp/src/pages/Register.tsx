@@ -40,6 +40,7 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [firstNameError, setFirstNameError] = useState(false);
   const [lastNameError, setLastNameError] = useState(false);
+  const [usernameError, setUsernameError] = useState('');
   const [emailError, setEmailError] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [codeError, setCodeError] = useState(false);
@@ -52,6 +53,7 @@ export default function Register() {
     const data = new FormData(e.currentTarget);
     const firstName = (data.get('firstName') as string).trim();
     const lastName = (data.get('lastName') as string).trim();
+    const usernameVal = (data.get('username') as string).trim();
     const emailVal = (data.get('email') as string).trim();
     const password = data.get('password') as string;
     const confirmPassword = data.get('confirmPassword') as string;
@@ -68,6 +70,15 @@ export default function Register() {
       valid = false;
     } else {
       setLastNameError(false);
+    }
+    if (!usernameVal || usernameVal.length < 3 || usernameVal.length > 20) {
+      setUsernameError('Username must be between 3 and 20 characters');
+      valid = false;
+    } else if (!/^[a-zA-Z0-9_]+$/.test(usernameVal)) {
+      setUsernameError('Only letters, numbers, and underscores allowed');
+      valid = false;
+    } else {
+      setUsernameError('');
     }
     if (!emailVal || !/\S+@\S+\.\S+/.test(emailVal)) {
       setEmailError(true);
@@ -95,7 +106,12 @@ export default function Register() {
         username: emailVal,
         password,
         options: {
-          userAttributes: { email: emailVal, given_name: firstName, family_name: lastName },
+          userAttributes: {
+            email: emailVal,
+            given_name: firstName,
+            family_name: lastName,
+            preferred_username: usernameVal,
+          },
           autoSignIn: true,
         },
       });
@@ -106,7 +122,13 @@ export default function Register() {
         setStep('confirm');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      const message = err instanceof Error ? err.message : 'Registration failed';
+      // Matched against pre-signup trigger error in src/domains/portfolio/async/pre-signup.ts
+      if (message.includes('Username is already taken')) {
+        setUsernameError('This username is already taken');
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -147,9 +169,9 @@ export default function Register() {
         display: 'flex',
         minHeight: '100vh',
         background: `
-          radial-gradient(ellipse at 20% 50%, rgba(0,198,251,0.06) 0%, transparent 50%),
+          radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.06) 0%, transparent 50%),
           radial-gradient(ellipse at 80% 20%, rgba(167,139,250,0.05) 0%, transparent 40%),
-          radial-gradient(ellipse at 50% 100%, rgba(0,91,234,0.04) 0%, transparent 50%)
+          radial-gradient(ellipse at 50% 100%, rgba(76,29,149,0.04) 0%, transparent 50%)
         `,
       }}
     >
@@ -176,7 +198,7 @@ export default function Register() {
               WebkitTextFillColor: 'transparent',
             }}
           >
-            No-code Bot Trading
+            Signalr
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
             Build, test, and deploy automated trading strategies without writing a single line of code.
@@ -246,6 +268,21 @@ export default function Register() {
                       />
                     </FormControl>
                   </Stack>
+
+                  <FormControl>
+                    <FormLabel htmlFor="username">Username</FormLabel>
+                    <TextField
+                      id="username"
+                      name="username"
+                      type="text"
+                      placeholder="trader_joe"
+                      autoComplete="username"
+                      fullWidth
+                      size="small"
+                      error={!!usernameError}
+                      helperText={usernameError || 'This will be shown publicly on the leaderboard'}
+                    />
+                  </FormControl>
 
                   <FormControl>
                     <FormLabel htmlFor="email">Email</FormLabel>

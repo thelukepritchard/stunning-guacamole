@@ -25,26 +25,11 @@ import { typography, colors, gradients } from '@shared/styles/tokens';
 /** Leaderboard entry from the API. */
 interface LeaderboardEntry {
   rank: number;
-  sub: string;
-  email?: string;
+  username: string;
   activeBots: number;
   totalNetPnl: number;
   pnl24h: number;
   timestamp: string;
-}
-
-/**
- * Masks an email address for privacy display.
- * Shows first character, masked middle, and full domain.
- *
- * @param email - The full email address.
- * @returns The masked email, e.g. "l***@gmail.com".
- */
-function maskEmail(email: string | undefined): string {
-  if (!email) return 'Anonymous';
-  const [local, domain] = email.split('@');
-  if (!local || !domain) return email;
-  return `${local[0]}***@${domain}`;
 }
 
 /** Medal colours for the top three positions. */
@@ -116,7 +101,7 @@ export default function Leaderboard() {
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
           {entries.slice(0, 3).map((entry) => (
             <Card
-              key={entry.sub}
+              key={entry.username}
               sx={{
                 flex: 1,
                 position: 'relative',
@@ -141,7 +126,7 @@ export default function Leaderboard() {
                   {entry.rank}
                 </Avatar>
                 <Typography variant="body2" fontWeight={600} noWrap>
-                  {maskEmail(entry.email)}
+                  {entry.username}
                 </Typography>
                 <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5} sx={{ mt: 0.5 }}>
                   <SmartToyOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
@@ -196,7 +181,7 @@ export default function Leaderboard() {
               </TableHead>
               <TableBody>
                 {entries.map((entry) => (
-                  <TableRow key={entry.sub} hover>
+                  <TableRow key={entry.username} hover>
                     <TableCell>
                       {entry.rank <= 3 ? (
                         <Chip
@@ -229,10 +214,10 @@ export default function Leaderboard() {
                             bgcolor: 'action.selected',
                           }}
                         >
-                          {entry.email?.[0]?.toUpperCase() ?? '?'}
+                          {entry.username[0]?.toUpperCase() ?? '?'}
                         </Avatar>
                         <Typography variant="body2" fontWeight={500}>
-                          {maskEmail(entry.email)}
+                          {entry.username}
                         </Typography>
                       </Stack>
                     </TableCell>

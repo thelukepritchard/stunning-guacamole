@@ -121,9 +121,9 @@ export default function SignIn() {
         display: 'flex',
         minHeight: '100vh',
         background: `
-          radial-gradient(ellipse at 20% 50%, rgba(0,198,251,0.06) 0%, transparent 50%),
+          radial-gradient(ellipse at 20% 50%, rgba(139,92,246,0.06) 0%, transparent 50%),
           radial-gradient(ellipse at 80% 20%, rgba(167,139,250,0.05) 0%, transparent 40%),
-          radial-gradient(ellipse at 50% 100%, rgba(0,91,234,0.04) 0%, transparent 50%)
+          radial-gradient(ellipse at 50% 100%, rgba(76,29,149,0.04) 0%, transparent 50%)
         `,
       }}
     >
@@ -150,7 +150,7 @@ export default function SignIn() {
               WebkitTextFillColor: 'transparent',
             }}
           >
-            No-code Bot Trading
+            Signalr
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mt: 2 }}>
             Build, test, and deploy automated trading strategies without writing a single line of code.

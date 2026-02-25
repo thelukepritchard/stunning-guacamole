@@ -24,3 +24,15 @@
 - `botPerformanceTable` is exposed as `public readonly` on `DomainTradingStack` and passed to `DomainPortfolioStack` for cross-domain reads.
 - Trading domain: 5 Lambda functions — API handler, price publisher, bot executor, lifecycle handler, bot performance recorder.
 - `botPerformanceTable` GSI `sub-index` is used by portfolio domain for user-level aggregation.
+- Portfolio table lives in `AuthStack` (not `DomainPortfolioStack`) to avoid circular dependency with the post-confirmation trigger.
+- `username-index` GSI on the portfolio table uses `ProjectionType.KEYS_ONLY` — pre-signup Lambda only needs to check existence, not read attributes.
+- Pre-signup Lambda needs only `grantReadData` (Query GSI). Post-confirmation Lambda needs only `grantWriteData` (PutItem). Both are correctly scoped.
+
+### Async Handler Testing Gaps
+- There are no unit tests for `async/pre-signup.ts` or `async/post-confirmation.ts`. The project does not currently test Cognito trigger handlers. Flag as a coverage gap when reviewing.
+
+### Infrastructure Test Gaps (Auth feature)
+- When new Lambda functions are added to AuthStack (e.g. pre-signup trigger), `infrastructure/test/infrastructure.test.ts` must be updated to assert the new function. This was omitted for the pre-signup Lambda.
+
+### Username Uniqueness Race Condition — Known Pattern
+- Cognito pre-signup + GSI uniqueness check has an inherent TOCTOU race: two concurrent signups with the same username can both pass the GSI check before either writes to DynamoDB. The check is best-effort only; true uniqueness enforcement requires a conditional write or a dedicated lock table. Always document this caveat when reviewing this pattern.

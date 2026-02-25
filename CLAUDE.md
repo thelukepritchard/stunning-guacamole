@@ -1,6 +1,6 @@
-# No-code Bot Trading
+# Signalr
 
-No-code bot trading is a SaaS platform that allows users to create rules in a drag-and-drop manner to construct trading bots.
+Signalr is a SaaS platform that allows users to create rules in a drag-and-drop manner to construct trading bots.
 
 These trading bots can then be deployed on exchanges such as Binance.
 
@@ -22,7 +22,8 @@ src/
     │   ├── utils.ts      # jsonResponse helper & RouteHandler type
     │   ├── routes/       # API route handlers (portfolio, performance, leaderboard)
     │   └── async/        # Event-driven handlers
-    │       ├── post-confirmation.ts           # Cognito trigger -> create portfolio entry
+    │       ├── pre-signup.ts                  # Cognito pre-sign-up trigger -> validate username uniqueness
+    │       ├── post-confirmation.ts           # Cognito post-confirmation trigger -> create portfolio entry with username
     │       └── portfolio-performance-recorder.ts # EventBridge 5-min schedule -> aggregated P&L snapshots
     ├── orderbook/        # Orderbook domain — CRUD via API Gateway
     │   ├── index.ts
@@ -49,7 +50,7 @@ src/
 infrastructure/           # AWS CDK v2 project (separate package)
 ├── bin/infrastructure.ts # CDK app entry point
 └── lib/
-    ├── auth.ts           # Cognito User Pool + Client + Portfolio table + post-confirmation trigger (AuthStack)
+    ├── auth.ts           # Cognito User Pool + Client + Portfolio table (with username GSI) + pre-signup + post-confirmation triggers (AuthStack)
     ├── rest-api.ts       # API Gateway REST API + Cognito Authorizer (RestApiStack)
     ├── domain-portfolio.ts   # Portfolio Lambda (2 functions) + DynamoDB (portfolio-performance) + EventBridge 5-min schedule + API routes (DomainPortfolioStack)
     ├── domain-orderbook.ts   # Orderbook Lambda + API routes (DomainOrderbookStack)
@@ -98,7 +99,7 @@ This project has custom agents in `.claude/agents/`. Use these instead of doing 
 
 When completing a feature or significant code change, follow this workflow:
 1. **Before starting**: Launch `notion-context-retriever` to fetch relevant documentation (Note you may also call this at anytime to retrieve documentation)
-2. **After writing code**: Launch `lead-tester` to verify tests pass and coverage is adequate. 
+2. **After writing code**: Launch `lead-tester` to verify tests pass and coverage is adequate. This only needs to ran when a function in a domain is modified.
 3. **After tests pass**: Launch `tech-lead-reviewer` to review code quality and standards. Only do this when the task is multiple file changes
 4. **When deploying**: Launch `infra-deployer` to deploy infrastructure changes
 

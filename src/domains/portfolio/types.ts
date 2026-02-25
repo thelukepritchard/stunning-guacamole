@@ -4,8 +4,8 @@
 export interface PortfolioRecord {
   /** Cognito user ID (partition key). */
   sub: string;
-  /** User email captured at sign-up. */
-  email: string;
+  /** Public username chosen at sign-up (immutable, unique). */
+  username: string;
   /** ISO timestamp of account creation. */
   createdAt: string;
 }

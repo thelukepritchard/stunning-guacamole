@@ -20,7 +20,7 @@ const RELEASES: Release[] = [
     date: '24 Feb 2026',
     tag: 'New',
     items: [
-      'Initial release of the No-code Bot Trading platform.',
+      'Initial release of the Signalr platform.',
       'Dashboard with portfolio performance and trading volume charts.',
       'Portfolio and orderbook views.',
       'Bot management page.',

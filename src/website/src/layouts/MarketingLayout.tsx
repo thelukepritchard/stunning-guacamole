@@ -54,7 +54,7 @@ export default function MarketingLayout() {
                 mr: 4,
               }}
             >
-              Bot Trading
+              Signalr
             </Typography>
 
             {/* Desktop nav links */}
@@ -157,7 +157,7 @@ export default function MarketingLayout() {
                   mb: 1,
                 }}
               >
-                Bot Trading
+                Signalr
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 320 }}>
                 Automated trading strategies for everyone. No code required.
@@ -198,7 +198,7 @@ export default function MarketingLayout() {
           <Divider sx={{ my: 4 }} />
 
           <Typography variant="caption" color="text.tertiary">
-            &copy; {new Date().getFullYear()} No-code Bot Trading. All rights reserved.
+            &copy; {new Date().getFullYear()} Signalr. All rights reserved.
           </Typography>
         </Container>
       </Box>

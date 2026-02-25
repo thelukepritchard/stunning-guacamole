@@ -44,10 +44,13 @@ async function deleteBotRecords(tableName: string, botId: string): Promise<void>
         })),
       };
 
+      type RequestItemsMap = Record<string, { DeleteRequest: { Key: Record<string, unknown> } }[]>;
       do {
-        const result = await ddbDoc.send(new BatchWriteCommand({ RequestItems: requestItems }));
-        requestItems = result.UnprocessedItems && Object.keys(result.UnprocessedItems).length > 0
-          ? result.UnprocessedItems as typeof requestItems
+        const batchResult: { UnprocessedItems?: Record<string, unknown[]> } =
+          await ddbDoc.send(new BatchWriteCommand({ RequestItems: requestItems }));
+        const unprocessed = batchResult.UnprocessedItems;
+        requestItems = unprocessed && Object.keys(unprocessed).length > 0
+          ? (unprocessed as RequestItemsMap)
           : undefined;
       } while (requestItems);
     }
