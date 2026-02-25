@@ -11,12 +11,75 @@ const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const eventBridge = new EventBridgeClient({});
 
 /**
+ * Validates a SizingConfig object.
+ *
+ * @param sizing - The sizing configuration to validate.
+ * @param label - A label for error messages (e.g. 'buySizing').
+ * @returns An error message string, or undefined if valid.
+ */
+function validateSizing(sizing: unknown, label: string): string | undefined {
+  if (sizing === undefined || sizing === null) return undefined;
+  if (typeof sizing !== 'object') return `${label} must be an object`;
+  const s = sizing as Record<string, unknown>;
+  if (s.type !== 'fixed' && s.type !== 'percentage') {
+    return `${label}.type must be 'fixed' or 'percentage'`;
+  }
+  if (typeof s.value !== 'number' || s.value <= 0) {
+    return `${label}.value must be a positive number`;
+  }
+  if (s.type === 'percentage' && s.value > 100) {
+    return `${label}.value must be between 0 and 100 for percentage type`;
+  }
+  return undefined;
+}
+
+/**
+ * Validates a StopLossConfig object.
+ *
+ * @param sl - The stop-loss configuration to validate.
+ * @returns An error message string, or undefined if valid.
+ */
+function validateStopLoss(sl: unknown): string | undefined {
+  if (sl === undefined || sl === null) return undefined;
+  if (typeof sl !== 'object') return 'stopLoss must be an object';
+  const s = sl as Record<string, unknown>;
+  if (typeof s.percentage !== 'number' || s.percentage <= 0 || s.percentage > 100) {
+    return 'stopLoss.percentage must be a number between 0 and 100';
+  }
+  return undefined;
+}
+
+/**
+ * Validates a TakeProfitConfig object.
+ *
+ * @param tp - The take-profit configuration to validate.
+ * @returns An error message string, or undefined if valid.
+ */
+function validateTakeProfit(tp: unknown): string | undefined {
+  if (tp === undefined || tp === null) return undefined;
+  if (typeof tp !== 'object') return 'takeProfit must be an object';
+  const t = tp as Record<string, unknown>;
+  if (typeof t.percentage !== 'number' || t.percentage <= 0 || t.percentage > 100) {
+    return 'takeProfit.percentage must be a number between 0 and 100';
+  }
+  return undefined;
+}
+
+/** Fields that support explicit `null` to remove from DynamoDB. */
+const NULLABLE_FIELDS = ['stopLoss', 'takeProfit'];
+
+/**
  * Updates an existing bot. Supports updating name, pair, status, executionMode,
- * buyQuery, sellQuery, and cooldownMinutes.
+ * buyQuery, sellQuery, cooldownMinutes, buySizing, sellSizing, stopLoss,
+ * and takeProfit.
  *
  * When `executionMode` is changed, execution state fields (lastAction,
  * buyCooldownUntil, sellCooldownUntil) are automatically cleared to give
  * the bot a clean start under the new mode.
+ *
+ * Nullable fields (stopLoss, takeProfit) can be explicitly set to `null`
+ * to remove them from the bot record. Position sizing (buySizing,
+ * sellSizing) is mandatory when the corresponding query is present.
  *
  * Publishes a BotUpdated event to EventBridge with previous status and
  * whether queries changed, enabling the lifecycle handler to manage
@@ -41,7 +104,24 @@ export async function updateBot(event: APIGatewayProxyEvent): Promise<APIGateway
     return jsonResponse(400, { error: 'executionMode must be once_and_wait or condition_cooldown' });
   }
 
-  const allowedFields = ['name', 'pair', 'status', 'executionMode', 'buyQuery', 'sellQuery', 'cooldownMinutes'];
+  // Validate sizing configs
+  const buySizingError = validateSizing(body.buySizing, 'buySizing');
+  if (buySizingError) return jsonResponse(400, { error: buySizingError });
+
+  const sellSizingError = validateSizing(body.sellSizing, 'sellSizing');
+  if (sellSizingError) return jsonResponse(400, { error: sellSizingError });
+
+  // Validate stop-loss and take-profit
+  const slError = validateStopLoss(body.stopLoss);
+  if (slError) return jsonResponse(400, { error: slError });
+
+  const tpError = validateTakeProfit(body.takeProfit);
+  if (tpError) return jsonResponse(400, { error: tpError });
+
+  const allowedFields = [
+    'name', 'pair', 'status', 'executionMode', 'buyQuery', 'sellQuery',
+    'cooldownMinutes', 'buySizing', 'sellSizing', 'stopLoss', 'takeProfit',
+  ];
   const updates: string[] = [];
   const removes: string[] = [];
   const names: Record<string, string> = { '#sub': 'sub' };
@@ -49,6 +129,12 @@ export async function updateBot(event: APIGatewayProxyEvent): Promise<APIGateway
 
   for (const field of allowedFields) {
     if (body[field] !== undefined) {
+      // Explicit null on nullable fields → REMOVE the attribute
+      if (body[field] === null && NULLABLE_FIELDS.includes(field)) {
+        removes.push(`#${field}`);
+        names[`#${field}`] = field;
+        continue;
+      }
       const attrName = `#${field}`;
       const attrValue = `:${field}`;
       updates.push(`${attrName} = ${attrValue}`);
@@ -57,7 +143,7 @@ export async function updateBot(event: APIGatewayProxyEvent): Promise<APIGateway
     }
   }
 
-  if (updates.length === 0) {
+  if (updates.length === 0 && removes.length === 0) {
     return jsonResponse(400, { error: 'No valid fields to update' });
   }
 
@@ -85,12 +171,30 @@ export async function updateBot(event: APIGatewayProxyEvent): Promise<APIGateway
     return jsonResponse(400, { error: 'once_and_wait mode requires both buyQuery and sellQuery' });
   }
 
+  // Sizing is mandatory when the corresponding action has a query
+  const resultingBuySizing = body.buySizing !== undefined ? body.buySizing : currentBot.buySizing;
+  const resultingSellSizing = body.sellSizing !== undefined ? body.sellSizing : currentBot.sellSizing;
+  if (resultingBuy && !resultingBuySizing) {
+    return jsonResponse(400, { error: 'buySizing is required when buyQuery is present' });
+  }
+  if (resultingSell && !resultingSellSizing) {
+    return jsonResponse(400, { error: 'sellSizing is required when sellQuery is present' });
+  }
+
   // When executionMode changes, clear execution state for a clean start
   if (body.executionMode !== undefined) {
     removes.push('#lastAction', '#buyCooldownUntil', '#sellCooldownUntil');
     names['#lastAction'] = 'lastAction';
     names['#buyCooldownUntil'] = 'buyCooldownUntil';
     names['#sellCooldownUntil'] = 'sellCooldownUntil';
+  }
+
+  // When both stopLoss and takeProfit are removed, clear entryPrice
+  const resultingSL = body.stopLoss !== undefined ? body.stopLoss : currentBot.stopLoss;
+  const resultingTP = body.takeProfit !== undefined ? body.takeProfit : currentBot.takeProfit;
+  if (!resultingSL && !resultingTP && currentBot.entryPrice !== undefined) {
+    removes.push('#entryPrice');
+    names['#entryPrice'] = 'entryPrice';
   }
 
   // Always update updatedAt
@@ -116,9 +220,11 @@ export async function updateBot(event: APIGatewayProxyEvent): Promise<APIGateway
 
     const updatedBot = result.Attributes as BotRecord;
 
-    // Publish BotUpdated event
+    // Publish BotUpdated event — queries or SL/TP changes affect subscriptions
     const queriesChanged = JSON.stringify(currentBot.buyQuery) !== JSON.stringify(updatedBot.buyQuery)
-      || JSON.stringify(currentBot.sellQuery) !== JSON.stringify(updatedBot.sellQuery);
+      || JSON.stringify(currentBot.sellQuery) !== JSON.stringify(updatedBot.sellQuery)
+      || JSON.stringify(currentBot.stopLoss) !== JSON.stringify(updatedBot.stopLoss)
+      || JSON.stringify(currentBot.takeProfit) !== JSON.stringify(updatedBot.takeProfit);
 
     try {
       await eventBridge.send(new PutEventsCommand({

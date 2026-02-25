@@ -1,7 +1,11 @@
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib/core';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as identity from 'aws-cdk-lib/aws-cognito-identitypool';
+import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
 
 /** Props for {@link AuthStack}. */
@@ -17,8 +21,10 @@ export interface AuthStackProps extends cdk.NestedStackProps {
 /**
  * Cognito authentication stack.
  *
- * Creates a User Pool with self-sign-up enabled and a User Pool Client
- * for API access.
+ * Creates a User Pool with self-sign-up enabled, a User Pool Client
+ * for API access, a portfolio DynamoDB table (one record per user),
+ * and a post-confirmation Lambda trigger that creates the portfolio
+ * entry on sign-up.
  */
 export class AuthStack extends cdk.NestedStack {
 
@@ -28,8 +34,38 @@ export class AuthStack extends cdk.NestedStack {
   /** The User Pool Client for API access. */
   public readonly userPoolClient: cognito.UserPoolClient;
 
+  /** The portfolio DynamoDB table (one record per user, created on sign-up). */
+  public readonly portfolioTable: dynamodb.Table;
+
   constructor(scope: Construct, id: string, props: AuthStackProps) {
     super(scope, id, props);
+
+    // ─── Portfolio Table ──────────────────────────────────────────
+    // Created here (alongside UserPool) to avoid circular dependencies
+    // between AuthStack and DomainPortfolioStack. Handler code lives
+    // in src/domains/portfolio/async/post-confirmation.ts.
+
+    this.portfolioTable = new dynamodb.Table(this, 'PortfolioTable', {
+      tableName: `${props.name}-${props.environment}-portfolio`,
+      partitionKey: { name: 'sub', type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // ─── Post-Confirmation Lambda ─────────────────────────────────
+
+    const postConfirmationHandler = new NodejsFunction(this, 'PostConfirmationHandler', {
+      functionName: `${props.name}-${props.environment}-portfolio-post-confirmation`,
+      runtime: lambda.Runtime.NODEJS_24_X,
+      entry: path.join(__dirname, '../../src/domains/portfolio/async/post-confirmation.ts'),
+      handler: 'handler',
+      environment: {
+        PORTFOLIO_TABLE_NAME: this.portfolioTable.tableName,
+      },
+    });
+
+    this.portfolioTable.grantWriteData(postConfirmationHandler);
+
+    // ─── Cognito User Pool ────────────────────────────────────────
 
     this.userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: `${props.name}-${props.environment}-user-pool`,
@@ -37,6 +73,9 @@ export class AuthStack extends cdk.NestedStack {
       autoVerify: { email: true },
       signInAliases: { email: true },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+      lambdaTriggers: {
+        postConfirmation: postConfirmationHandler,
+      },
     });
 
     this.userPoolClient = this.userPool.addClient('UserPoolClient');

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router';
 import { signOut, fetchUserAttributes } from 'aws-amplify/auth';
 import AppBar from '@mui/material/AppBar';
@@ -22,9 +22,13 @@ import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import EmojiEventsOutlinedIcon from '@mui/icons-material/EmojiEventsOutlined';
 import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
 import NewReleasesOutlinedIcon from '@mui/icons-material/NewReleasesOutlined';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import Tooltip from '@mui/material/Tooltip';
 import FeedbackDialog from '../components/FeedbackDialog';
+import { useApi } from '../hooks/useApi';
 import { gradients, colors } from '@shared/styles/tokens';
 
 const DRAWER_WIDTH = 260;
@@ -35,6 +39,7 @@ const NAV_ITEMS = [
   { label: 'Portfolios', path: '/portfolios', icon: <AccountBalanceWalletOutlinedIcon /> },
   { label: 'Orderbook', path: '/orderbook', icon: <MenuBookOutlinedIcon /> },
   { label: 'Bots', path: '/bots', icon: <SmartToyOutlinedIcon /> },
+  { label: 'Leaderboard', path: '/leaderboard', icon: <EmojiEventsOutlinedIcon /> },
 ] as const;
 
 /**
@@ -48,6 +53,9 @@ export default function DashboardLayout() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+
+  const { request } = useApi();
 
   useEffect(() => {
     fetchUserAttributes()
@@ -59,6 +67,20 @@ export default function DashboardLayout() {
       .catch(() => {});
   }, []);
 
+  /** Fetches trading settings to determine if the user is in demo mode. */
+  const checkDemoMode = useCallback(async () => {
+    try {
+      const settings = await request<{ exchange: string }>('GET', '/trading/settings');
+      setIsDemoMode(settings.exchange === 'demo');
+    } catch {
+      setIsDemoMode(true);
+    }
+  }, [request]);
+
+  useEffect(() => {
+    checkDemoMode();
+  }, [checkDemoMode]);
+
   /** Handles user sign-out and redirects to sign-in page. */
   const handleSignOut = async () => {
     await signOut();
@@ -69,19 +91,45 @@ export default function DashboardLayout() {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* App Title */}
       <Box sx={{ px: 2.5, py: 2.5 }}>
-        <Typography
-          variant="h6"
-          fontWeight={700}
-          sx={{
-            background: gradients.primary,
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            letterSpacing: '-0.02em',
-          }}
-        >
-          Bot Trading
-        </Typography>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Typography
+            variant="h6"
+            fontWeight={700}
+            sx={{
+              background: gradients.primary,
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Bot Trading
+          </Typography>
+          {isDemoMode && (
+            <Tooltip
+              title="You are in demo mode. Configure API keys for an exchange in Settings to make actual trades."
+              arrow
+              placement="right"
+            >
+              <Box
+                sx={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  bgcolor: 'error.main',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+                onClick={() => navigate('/settings')}
+              >
+                <ErrorOutlineIcon sx={{ fontSize: 14, color: 'white' }} />
+              </Box>
+            </Tooltip>
+          )}
+        </Stack>
       </Box>
       <Divider />
 

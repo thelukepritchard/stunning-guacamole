@@ -8,6 +8,9 @@ import { listTrades } from './routes/list-trades';
 import { listBotTrades } from './routes/list-bot-trades';
 import { getPriceHistory } from './routes/get-price-history';
 import { getBotPerformance } from './routes/get-bot-performance';
+import { getSettings } from './routes/get-settings';
+import { updateSettings } from './routes/update-settings';
+import { getExchangeOptions } from './routes/get-exchange-options';
 
 /**
  * Lambda entry-point for the trading domain. Routes the incoming API Gateway
@@ -29,6 +32,9 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     case 'GET /trading/trades/{botId}':           return listBotTrades(event);
     case 'GET /trading/prices/{pair}':            return getPriceHistory(event);
     case 'GET /trading/bots/{botId}/performance': return getBotPerformance(event);
+    case 'GET /trading/settings':                 return getSettings(event);
+    case 'PUT /trading/settings':                 return updateSettings(event);
+    case 'GET /trading/settings/exchange-options': return getExchangeOptions(event);
     default:
       return {
         statusCode: 404,

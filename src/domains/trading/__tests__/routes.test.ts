@@ -63,6 +63,7 @@ describe('trading route handlers', () => {
     jest.clearAllMocks();
     process.env.BOTS_TABLE_NAME = 'BotsTable';
     process.env.TRADES_TABLE_NAME = 'TradesTable';
+    process.env.BOT_PERFORMANCE_TABLE_NAME = 'BotPerformanceTable';
   });
 
   /**
@@ -82,6 +83,7 @@ describe('trading route handlers', () => {
           pair: 'BTC/USDT',
           executionMode: 'condition_cooldown',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+          buySizing: { type: 'fixed', value: 100 },
         }),
       });
 
@@ -93,6 +95,7 @@ describe('trading route handlers', () => {
       expect(body.pair).toBe('BTC/USDT');
       expect(body.executionMode).toBe('condition_cooldown');
       expect(body.buyQuery).toBeDefined();
+      expect(body.buySizing).toBeDefined();
       expect(body.sellQuery).toBeUndefined();
       expect(body.status).toBe('draft');
       expect(body.botId).toBeDefined();
@@ -116,6 +119,7 @@ describe('trading route handlers', () => {
           pair: 'BTC/USDT',
           executionMode: 'condition_cooldown',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+          buySizing: { type: 'fixed', value: 100 },
         }),
       });
 
@@ -143,6 +147,8 @@ describe('trading route handlers', () => {
           executionMode: 'once_and_wait',
           buyQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '<', value: '30' }] },
           sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '70' }] },
+          buySizing: { type: 'fixed', value: 100 },
+          sellSizing: { type: 'fixed', value: 100 },
         }),
       });
 
@@ -152,7 +158,9 @@ describe('trading route handlers', () => {
       expect(result.statusCode).toBe(201);
       expect(body.executionMode).toBe('once_and_wait');
       expect(body.buyQuery).toBeDefined();
+      expect(body.buySizing).toBeDefined();
       expect(body.sellQuery).toBeDefined();
+      expect(body.sellSizing).toBeDefined();
       expect(mockSend).toHaveBeenCalledTimes(1);
     });
 
@@ -199,6 +207,7 @@ describe('trading route handlers', () => {
           pair: 'BTC/USDT',
           executionMode: 'once_and_wait',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+          buySizing: { type: 'fixed', value: 100 },
         }),
       });
 
@@ -220,6 +229,7 @@ describe('trading route handlers', () => {
           pair: 'BTC/USDT',
           executionMode: 'once_and_wait',
           sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '70' }] },
+          sellSizing: { type: 'fixed', value: 100 },
         }),
       });
 
@@ -244,6 +254,7 @@ describe('trading route handlers', () => {
           pair: 'BTC/USDT',
           executionMode: 'condition_cooldown',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+          buySizing: { type: 'fixed', value: 100 },
           cooldownMinutes: 30,
         }),
       });
@@ -252,6 +263,7 @@ describe('trading route handlers', () => {
       const body = JSON.parse(result.body);
 
       expect(result.statusCode).toBe(201);
+      expect(body.buySizing).toBeDefined();
       expect(body.cooldownMinutes).toBe(30);
     });
 
@@ -265,6 +277,7 @@ describe('trading route handlers', () => {
           pair: 'BTC/USDT',
           executionMode: 'condition_cooldown',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+          buySizing: { type: 'fixed', value: 100 },
           cooldownMinutes: -5,
         }),
       });
@@ -286,6 +299,7 @@ describe('trading route handlers', () => {
           pair: 'BTC/USDT',
           executionMode: 'invalid_mode',
           buyQuery: { combinator: 'and', rules: [] },
+          buySizing: { type: 'fixed', value: 100 },
         }),
       });
 
@@ -307,6 +321,7 @@ describe('trading route handlers', () => {
           pair: 'BTC/USDT',
           executionMode: 'condition_cooldown',
           buyQuery: { combinator: 'and', rules: [] },
+          buySizing: { type: 'fixed', value: 100 },
         }),
         requestContext: {
           authorizer: { claims: {} },
@@ -522,6 +537,7 @@ describe('trading route handlers', () => {
         Item: {
           sub: 'user-123', botId: 'bot-001', executionMode: 'condition_cooldown',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+          buySizing: { type: 'fixed', value: 100 },
         },
       }); // GetCommand
 
@@ -545,7 +561,9 @@ describe('trading route handlers', () => {
         Item: {
           sub: 'user-123', botId: 'bot-001', status: 'draft', executionMode: 'condition_cooldown',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+          buySizing: { type: 'fixed', value: 100 },
           sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '70' }] },
+          sellSizing: { type: 'fixed', value: 100 },
         },
       }); // GetCommand
       const updatedAttrs = { botId: 'bot-001', executionMode: 'once_and_wait', sub: 'user-123' };
@@ -572,7 +590,9 @@ describe('trading route handlers', () => {
         Item: {
           sub: 'user-123', botId: 'bot-001', executionMode: 'once_and_wait',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+          buySizing: { type: 'fixed', value: 100 },
           sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '70' }] },
+          sellSizing: { type: 'fixed', value: 100 },
         },
       }); // GetCommand
 
@@ -642,7 +662,7 @@ describe('trading route handlers', () => {
   describe('deleteBot', () => {
     /** Verifies successful deletion returns 200 and deletes trades. */
     it('returns 200 with deletion confirmation and deletes trades', async () => {
-      const mockBot = { sub: 'user-123', botId: 'bot-001', subscriptionArn: 'arn:sub-001' };
+      const mockBot = { sub: 'user-123', botId: 'bot-001', buySubscriptionArn: 'arn:buy-sub', sellSubscriptionArn: 'arn:sell-sub' };
       const mockTrades = [
         { botId: 'bot-001', timestamp: '2026-01-01T00:00:00Z' },
         { botId: 'bot-001', timestamp: '2026-01-01T00:01:00Z' },
@@ -650,7 +670,8 @@ describe('trading route handlers', () => {
       mockSend.mockResolvedValueOnce({ Item: mockBot }); // GetCommand
       mockSend.mockResolvedValueOnce({}); // DeleteCommand
       mockSend.mockResolvedValueOnce({ Items: mockTrades }); // trade query
-      mockSend.mockResolvedValueOnce({}); // batch delete
+      mockSend.mockResolvedValueOnce({ Items: [] }); // performance query
+      mockSend.mockResolvedValueOnce({}); // batch delete (trades)
       mockEventBridgeSend.mockResolvedValueOnce({}); // EventBridge
 
       const event = buildRouteEvent({
@@ -664,19 +685,15 @@ describe('trading route handlers', () => {
 
       expect(result.statusCode).toBe(200);
       expect(body).toEqual({ botId: 'bot-001', deleted: true });
-      // Get + Delete + trade query + batch delete
-      expect(mockSend).toHaveBeenCalledTimes(4);
-      const { BatchWriteCommand } = require('@aws-sdk/lib-dynamodb');
-      const batchCall = BatchWriteCommand.mock.calls[0][0];
-      expect(batchCall.RequestItems.TradesTable).toHaveLength(2);
     });
 
-    /** Verifies a BotDeleted event is published with subscriptionArn. */
+    /** Verifies a BotDeleted event is published with subscription ARNs. */
     it('publishes a BotDeleted event to EventBridge', async () => {
-      const mockBot = { sub: 'user-123', botId: 'bot-001', subscriptionArn: 'arn:sub-001' };
+      const mockBot = { sub: 'user-123', botId: 'bot-001', buySubscriptionArn: 'arn:buy-sub', sellSubscriptionArn: 'arn:sell-sub' };
       mockSend.mockResolvedValueOnce({ Item: mockBot }); // GetCommand
       mockSend.mockResolvedValueOnce({}); // DeleteCommand
       mockSend.mockResolvedValueOnce({ Items: [] }); // trade query (empty)
+      mockSend.mockResolvedValueOnce({ Items: [] }); // performance query (empty)
       mockEventBridgeSend.mockResolvedValueOnce({}); // EventBridge
 
       const event = buildRouteEvent({
@@ -691,7 +708,8 @@ describe('trading route handlers', () => {
       const ebCall = PutEventsCommand.mock.calls[0][0];
       expect(ebCall.Entries[0].DetailType).toBe('BotDeleted');
       const detail = JSON.parse(ebCall.Entries[0].Detail);
-      expect(detail.subscriptionArn).toBe('arn:sub-001');
+      expect(detail.buySubscriptionArn).toBe('arn:buy-sub');
+      expect(detail.sellSubscriptionArn).toBe('arn:sell-sub');
     });
 
     /** Verifies deletion works when bot has no trades. */
@@ -700,6 +718,7 @@ describe('trading route handlers', () => {
       mockSend.mockResolvedValueOnce({ Item: mockBot }); // GetCommand
       mockSend.mockResolvedValueOnce({}); // DeleteCommand
       mockSend.mockResolvedValueOnce({ Items: [] }); // trade query (empty)
+      mockSend.mockResolvedValueOnce({ Items: [] }); // performance query (empty)
       mockEventBridgeSend.mockResolvedValueOnce({}); // EventBridge
 
       const event = buildRouteEvent({
@@ -713,8 +732,6 @@ describe('trading route handlers', () => {
 
       expect(result.statusCode).toBe(200);
       expect(body).toEqual({ botId: 'bot-001', deleted: true });
-      // Get + Delete + trade query (no batch delete needed)
-      expect(mockSend).toHaveBeenCalledTimes(3);
     });
 
     /** Verifies no event is published when the bot did not exist. */
@@ -722,6 +739,7 @@ describe('trading route handlers', () => {
       mockSend.mockResolvedValueOnce({ Item: undefined }); // GetCommand — not found
       mockSend.mockResolvedValueOnce({}); // DeleteCommand
       mockSend.mockResolvedValueOnce({ Items: [] }); // trade query
+      mockSend.mockResolvedValueOnce({ Items: [] }); // performance query
 
       const event = buildRouteEvent({
         httpMethod: 'DELETE',

@@ -8,9 +8,12 @@ import CardActionArea from '@mui/material/CardActionArea';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
+import Collapse from '@mui/material/Collapse';
+import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Grid from '@mui/material/Grid2';
 import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
@@ -29,6 +32,25 @@ import { tradingPairs, type BotStatus, type ExecutionMode } from '../data/mockDa
 import { useApi } from '../hooks/useApi';
 import { colors } from '@shared/styles/tokens';
 
+/** Position sizing type. */
+type SizingType = 'fixed' | 'percentage';
+
+/** Position sizing configuration. */
+interface SizingConfig {
+  type: SizingType;
+  value: number;
+}
+
+/** Stop-loss configuration. */
+interface StopLossConfig {
+  percentage: number;
+}
+
+/** Take-profit configuration. */
+interface TakeProfitConfig {
+  percentage: number;
+}
+
 /** API bot record shape. */
 interface ApiBotRecord {
   sub: string;
@@ -40,6 +62,10 @@ interface ApiBotRecord {
   buyQuery?: RuleGroupType;
   sellQuery?: RuleGroupType;
   cooldownMinutes?: number;
+  buySizing?: SizingConfig;
+  sellSizing?: SizingConfig;
+  stopLoss?: StopLossConfig;
+  takeProfit?: TakeProfitConfig;
   createdAt: string;
   updatedAt: string;
 }
@@ -161,6 +187,18 @@ export default function Bots() {
   const [buyQuery, setBuyQuery] = useState<RuleGroupType>(emptyQuery);
   const [sellQuery, setSellQuery] = useState<RuleGroupType>(emptyQuery);
 
+  // Position sizing state (mandatory per action)
+  const [buySizingType, setBuySizingType] = useState<SizingType>('fixed');
+  const [buySizingValue, setBuySizingValue] = useState<number | ''>('');
+  const [sellSizingType, setSellSizingType] = useState<SizingType>('fixed');
+  const [sellSizingValue, setSellSizingValue] = useState<number | ''>('');
+
+  // Risk management state
+  const [stopLossEnabled, setStopLossEnabled] = useState(false);
+  const [stopLossPercentage, setStopLossPercentage] = useState<number | ''>('');
+  const [takeProfitEnabled, setTakeProfitEnabled] = useState(false);
+  const [takeProfitPercentage, setTakeProfitPercentage] = useState<number | ''>('');
+
   /** Fetch bots from the API. */
   const fetchBots = useCallback(async () => {
     try {
@@ -189,6 +227,14 @@ export default function Bots() {
     setSellEnabled(false);
     setBuyQuery(emptyQuery);
     setSellQuery(emptyQuery);
+    setBuySizingType('fixed');
+    setBuySizingValue('');
+    setSellSizingType('fixed');
+    setSellSizingValue('');
+    setStopLossEnabled(false);
+    setStopLossPercentage('');
+    setTakeProfitEnabled(false);
+    setTakeProfitPercentage('');
     setEditingBot({ sub: '', botId: '', name: '', pair: tradingPairs[0], status: 'draft', executionMode: 'condition_cooldown', createdAt: '', updatedAt: '' });
   };
 
@@ -202,6 +248,14 @@ export default function Bots() {
     setSellEnabled(!!bot.sellQuery);
     setBuyQuery(bot.buyQuery ?? emptyQuery);
     setSellQuery(bot.sellQuery ?? emptyQuery);
+    setBuySizingType(bot.buySizing?.type ?? 'fixed');
+    setBuySizingValue(bot.buySizing?.value ?? '');
+    setSellSizingType(bot.sellSizing?.type ?? 'fixed');
+    setSellSizingValue(bot.sellSizing?.value ?? '');
+    setStopLossEnabled(!!bot.stopLoss);
+    setStopLossPercentage(bot.stopLoss?.percentage ?? '');
+    setTakeProfitEnabled(!!bot.takeProfit);
+    setTakeProfitPercentage(bot.takeProfit?.percentage ?? '');
     setEditingBot(bot);
   };
 
@@ -216,8 +270,30 @@ export default function Bots() {
       setError('Once and wait mode requires both Buy and Sell rules');
       return;
     }
+    if (buyEnabled && (typeof buySizingValue !== 'number' || buySizingValue <= 0)) {
+      setError('Buy position sizing value is required');
+      return;
+    }
+    if (sellEnabled && (typeof sellSizingValue !== 'number' || sellSizingValue <= 0)) {
+      setError('Sell position sizing value is required');
+      return;
+    }
     setSaving(true);
     setError(null);
+
+    // Build sizing configs — mandatory when the corresponding action is enabled
+    const buySizing = buyEnabled && typeof buySizingValue === 'number' && buySizingValue > 0
+      ? { type: buySizingType, value: buySizingValue }
+      : null;
+    const sellSizing = sellEnabled && typeof sellSizingValue === 'number' && sellSizingValue > 0
+      ? { type: sellSizingType, value: sellSizingValue }
+      : null;
+    const stopLoss = stopLossEnabled && typeof stopLossPercentage === 'number' && stopLossPercentage > 0
+      ? { percentage: stopLossPercentage }
+      : null;
+    const takeProfit = takeProfitEnabled && typeof takeProfitPercentage === 'number' && takeProfitPercentage > 0
+      ? { percentage: takeProfitPercentage }
+      : null;
 
     const payload: Record<string, unknown> = { name, pair, executionMode };
     if (buyEnabled) payload.buyQuery = buyQuery;
@@ -233,15 +309,24 @@ export default function Bots() {
 
     try {
       if (editingBot.botId) {
+        // For update, send null to remove disabled configs
+        payload.buySizing = buySizing;
+        payload.sellSizing = sellSizing;
+        payload.stopLoss = stopLoss;
+        payload.takeProfit = takeProfit;
         await request('PUT', `/trading/bots/${editingBot.botId}`, payload);
       } else {
-        // For create, only send present queries
+        // For create, only send present configs
         const createPayload: Record<string, unknown> = { name, pair, executionMode };
         if (buyEnabled) createPayload.buyQuery = buyQuery;
         if (sellEnabled) createPayload.sellQuery = sellQuery;
         if (executionMode === 'condition_cooldown' && typeof cooldownMinutes === 'number' && cooldownMinutes > 0) {
           createPayload.cooldownMinutes = cooldownMinutes;
         }
+        if (buySizing) createPayload.buySizing = buySizing;
+        if (sellSizing) createPayload.sellSizing = sellSizing;
+        if (stopLoss) createPayload.stopLoss = stopLoss;
+        if (takeProfit) createPayload.takeProfit = takeProfit;
         await request('POST', '/trading/bots', createPayload);
       }
       setEditingBot(null);
@@ -399,6 +484,47 @@ export default function Bots() {
                 >
                   When {describeQuery(buyQuery)}, then BUY
                 </Typography>
+
+                {/* Buy Position Sizing */}
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="body2" fontWeight={500} sx={{ mb: 1 }}>Position Sizing</Typography>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      label="Type"
+                      fullWidth
+                      select
+                      size="small"
+                      value={buySizingType}
+                      onChange={(e) => setBuySizingType(e.target.value as SizingType)}
+                    >
+                      <MenuItem value="fixed">Fixed Amount</MenuItem>
+                      <MenuItem value="percentage">Percentage of Portfolio</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      label="Value"
+                      type="number"
+                      fullWidth
+                      required
+                      size="small"
+                      value={buySizingValue}
+                      onChange={(e) => setBuySizingValue(e.target.value === '' ? '' : Number(e.target.value))}
+                      slotProps={{
+                        htmlInput: { min: 0, max: buySizingType === 'percentage' ? 100 : undefined, step: buySizingType === 'percentage' ? 1 : 0.01 },
+                        input: {
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              {buySizingType === 'percentage' ? '%' : '$'}
+                            </InputAdornment>
+                          ),
+                        },
+                      }}
+                      helperText={buySizingType === 'percentage' ? 'Percentage of portfolio (0–100)' : 'Amount in base currency'}
+                    />
+                  </Grid>
+                </Grid>
               </>
             )}
           </CardContent>
@@ -437,8 +563,136 @@ export default function Bots() {
                 >
                   When {describeQuery(sellQuery)}, then SELL
                 </Typography>
+
+                {/* Sell Position Sizing */}
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="body2" fontWeight={500} sx={{ mb: 1 }}>Position Sizing</Typography>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      label="Type"
+                      fullWidth
+                      select
+                      size="small"
+                      value={sellSizingType}
+                      onChange={(e) => setSellSizingType(e.target.value as SizingType)}
+                    >
+                      <MenuItem value="fixed">Fixed Amount</MenuItem>
+                      <MenuItem value="percentage">Percentage of Holdings</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <TextField
+                      label="Value"
+                      type="number"
+                      fullWidth
+                      required
+                      size="small"
+                      value={sellSizingValue}
+                      onChange={(e) => setSellSizingValue(e.target.value === '' ? '' : Number(e.target.value))}
+                      slotProps={{
+                        htmlInput: { min: 0, max: sellSizingType === 'percentage' ? 100 : undefined, step: sellSizingType === 'percentage' ? 1 : 0.01 },
+                        input: {
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              {sellSizingType === 'percentage' ? '%' : '$'}
+                            </InputAdornment>
+                          ),
+                        },
+                      }}
+                      helperText={sellSizingType === 'percentage' ? 'Percentage of holdings (0–100)' : 'Amount in base currency'}
+                    />
+                  </Grid>
+                </Grid>
               </>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Risk Management — Stop-Loss & Take-Profit */}
+        <Card sx={{ mb: 3, p: 2 }}>
+          <CardContent>
+            <Typography variant="subtitle2" sx={{ mb: 2 }}>Risk Management</Typography>
+
+            {/* Stop-Loss */}
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Box>
+                <Typography variant="body2" fontWeight={500}>Stop-Loss</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Automatically sell when price drops below a percentage of the entry price
+                </Typography>
+              </Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={stopLossEnabled}
+                    onChange={(e) => setStopLossEnabled(e.target.checked)}
+                    size="small"
+                    color="error"
+                  />
+                }
+                label="Enabled"
+              />
+            </Stack>
+            <Collapse in={stopLossEnabled}>
+              <TextField
+                label="Stop-Loss Threshold"
+                type="number"
+                fullWidth
+                size="small"
+                value={stopLossPercentage}
+                onChange={(e) => setStopLossPercentage(e.target.value === '' ? '' : Number(e.target.value))}
+                slotProps={{
+                  htmlInput: { min: 0.1, max: 100, step: 0.1 },
+                  input: {
+                    endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                  },
+                }}
+                helperText="Sell if price drops this percentage below entry price (e.g. 10 = sell at -10%)"
+                sx={{ mt: 1, mb: 2 }}
+              />
+            </Collapse>
+
+            <Divider sx={{ my: 1.5 }} />
+
+            {/* Take-Profit */}
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Box>
+                <Typography variant="body2" fontWeight={500}>Take-Profit</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Automatically sell when price rises above a percentage of the entry price
+                </Typography>
+              </Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={takeProfitEnabled}
+                    onChange={(e) => setTakeProfitEnabled(e.target.checked)}
+                    size="small"
+                    color="success"
+                  />
+                }
+                label="Enabled"
+              />
+            </Stack>
+            <Collapse in={takeProfitEnabled}>
+              <TextField
+                label="Take-Profit Threshold"
+                type="number"
+                fullWidth
+                size="small"
+                value={takeProfitPercentage}
+                onChange={(e) => setTakeProfitPercentage(e.target.value === '' ? '' : Number(e.target.value))}
+                slotProps={{
+                  htmlInput: { min: 0.1, max: 100, step: 0.1 },
+                  input: {
+                    endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                  },
+                }}
+                helperText="Sell if price rises this percentage above entry price (e.g. 20 = sell at +20%)"
+                sx={{ mt: 1 }}
+              />
+            </Collapse>
           </CardContent>
         </Card>
 

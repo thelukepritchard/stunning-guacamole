@@ -25,7 +25,7 @@ import { handler } from '../async/bot-lifecycle-handler';
 /**
  * Tests for the bot lifecycle handler Lambda.
  * Verifies that EventBridge events for bot creates, updates, and deletes
- * trigger the correct SNS subscription management actions.
+ * trigger the correct per-action SNS subscription management.
  */
 describe('bot-lifecycle-handler', () => {
   beforeEach(() => {
@@ -85,9 +85,9 @@ describe('bot-lifecycle-handler', () => {
       expect(mockDdbSend).not.toHaveBeenCalled();
     });
 
-    /** Verifies subscription when bot is created with active status. */
-    it('subscribes when a new bot is created with active status', async () => {
-      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:sub-new' });
+    /** Verifies buy subscription when bot is created with active status and buyQuery only. */
+    it('creates buy subscription when bot is active with buyQuery', async () => {
+      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:buy-sub' });
       mockDdbSend.mockResolvedValueOnce({});
 
       const event = buildEvent<BotCreatedDetail>('BotCreated', {
@@ -97,6 +97,7 @@ describe('bot-lifecycle-handler', () => {
       await handler(event);
 
       const { SubscribeCommand } = require('@aws-sdk/client-sns');
+      expect(SubscribeCommand).toHaveBeenCalledTimes(1);
       expect(SubscribeCommand).toHaveBeenCalledWith(
         expect.objectContaining({
           TopicArn: 'arn:aws:sns:ap-southeast-2:123456789012:PriceTopic',
@@ -107,9 +108,9 @@ describe('bot-lifecycle-handler', () => {
       );
     });
 
-    /** Verifies the subscription ARN is stored in the bot record. */
-    it('updates bot record with subscription ARN after subscribing', async () => {
-      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:sub-new' });
+    /** Verifies the buy subscription ARN is stored in the bot record. */
+    it('updates bot record with buySubscriptionArn after subscribing', async () => {
+      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:buy-sub' });
       mockDdbSend.mockResolvedValueOnce({});
 
       const event = buildEvent<BotCreatedDetail>('BotCreated', {
@@ -123,10 +124,31 @@ describe('bot-lifecycle-handler', () => {
         expect.objectContaining({
           TableName: 'BotsTable',
           Key: { sub: 'user-123', botId: 'bot-001' },
-          UpdateExpression: 'SET subscriptionArn = :arn',
-          ExpressionAttributeValues: { ':arn': 'arn:aws:sns:sub-new' },
+          UpdateExpression: 'SET buySubscriptionArn = :arn',
+          ExpressionAttributeValues: { ':arn': 'arn:aws:sns:buy-sub' },
         }),
       );
+    });
+
+    /** Verifies both subscriptions when bot has both buyQuery and sellQuery. */
+    it('creates both buy and sell subscriptions when bot has both queries', async () => {
+      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:buy-sub' });
+      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:sell-sub' });
+      mockDdbSend.mockResolvedValueOnce({});
+      mockDdbSend.mockResolvedValueOnce({});
+
+      const event = buildEvent<BotCreatedDetail>('BotCreated', {
+        bot: {
+          ...baseBot,
+          status: 'active',
+          sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '70' }] },
+        },
+      });
+
+      await handler(event);
+
+      const { SubscribeCommand } = require('@aws-sdk/client-sns');
+      expect(SubscribeCommand).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -135,31 +157,36 @@ describe('bot-lifecycle-handler', () => {
    */
   describe('BotUpdated events', () => {
     /** Verifies unsubscribe when bot transitions from active to paused. */
-    it('unsubscribes when bot changes from active to paused', async () => {
-      mockSnsSend.mockResolvedValueOnce({});
-      mockDdbSend.mockResolvedValueOnce({});
+    it('unsubscribes all when bot changes from active to paused', async () => {
+      mockSnsSend.mockResolvedValue({});
+      mockDdbSend.mockResolvedValue({});
 
       const event = buildEvent<BotUpdatedDetail>('BotUpdated', {
-        bot: { ...baseBot, status: 'paused' },
+        bot: {
+          ...baseBot,
+          status: 'paused',
+          buySubscriptionArn: 'arn:aws:sns:buy-sub',
+          sellSubscriptionArn: 'arn:aws:sns:sell-sub',
+        },
         previousStatus: 'active',
         queriesChanged: false,
       });
-      // Bot had a subscriptionArn while active
-      (event.detail as BotUpdatedDetail).bot.subscriptionArn = 'arn:aws:sns:sub-001';
 
       await handler(event);
 
       const { UnsubscribeCommand } = require('@aws-sdk/client-sns');
+      expect(UnsubscribeCommand).toHaveBeenCalledTimes(2);
       expect(UnsubscribeCommand).toHaveBeenCalledWith(
-        expect.objectContaining({
-          SubscriptionArn: 'arn:aws:sns:sub-001',
-        }),
+        expect.objectContaining({ SubscriptionArn: 'arn:aws:sns:buy-sub' }),
+      );
+      expect(UnsubscribeCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ SubscriptionArn: 'arn:aws:sns:sell-sub' }),
       );
     });
 
     /** Verifies subscribe when bot transitions from paused to active. */
     it('subscribes when bot changes from paused to active', async () => {
-      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:sub-new' });
+      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:buy-sub' });
       mockDdbSend.mockResolvedValueOnce({});
 
       const event = buildEvent<BotUpdatedDetail>('BotUpdated', {
@@ -187,7 +214,7 @@ describe('bot-lifecycle-handler', () => {
         bot: {
           ...baseBot,
           status: 'active',
-          subscriptionArn: 'arn:aws:sns:sub-001',
+          buySubscriptionArn: 'arn:aws:sns:buy-sub',
           buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
         },
         previousStatus: 'active',
@@ -199,9 +226,66 @@ describe('bot-lifecycle-handler', () => {
       const { SetSubscriptionAttributesCommand } = require('@aws-sdk/client-sns');
       expect(SetSubscriptionAttributesCommand).toHaveBeenCalledWith(
         expect.objectContaining({
-          SubscriptionArn: 'arn:aws:sns:sub-001',
+          SubscriptionArn: 'arn:aws:sns:buy-sub',
           AttributeName: 'FilterPolicy',
         }),
+      );
+    });
+
+    /** Verifies a new subscription is created when a query is added while active. */
+    it('creates subscription when query is added while active', async () => {
+      mockSnsSend.mockResolvedValueOnce({}); // update buy filter policy
+      mockSnsSend.mockResolvedValueOnce({ SubscriptionArn: 'arn:aws:sns:sell-sub' }); // new sell subscription
+      mockDdbSend.mockResolvedValueOnce({}); // save sell ARN
+
+      const event = buildEvent<BotUpdatedDetail>('BotUpdated', {
+        bot: {
+          ...baseBot,
+          status: 'active',
+          buySubscriptionArn: 'arn:aws:sns:buy-sub',
+          sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '70' }] },
+          // no sellSubscriptionArn — new query added
+        },
+        previousStatus: 'active',
+        queriesChanged: true,
+      });
+
+      await handler(event);
+
+      const { SubscribeCommand, SetSubscriptionAttributesCommand } = require('@aws-sdk/client-sns');
+      // Buy: update filter policy (existing subscription)
+      expect(SetSubscriptionAttributesCommand).toHaveBeenCalledTimes(1);
+      // Sell: new subscription
+      expect(SubscribeCommand).toHaveBeenCalledTimes(1);
+    });
+
+    /** Verifies subscription is removed when query is removed while active. */
+    it('unsubscribes when query is removed while active', async () => {
+      mockSnsSend.mockResolvedValueOnce({}); // update buy filter policy
+      mockSnsSend.mockResolvedValueOnce({}); // unsubscribe sell
+      mockDdbSend.mockResolvedValueOnce({}); // remove sell ARN
+
+      const event = buildEvent<BotUpdatedDetail>('BotUpdated', {
+        bot: {
+          ...baseBot,
+          status: 'active',
+          buySubscriptionArn: 'arn:aws:sns:buy-sub',
+          sellSubscriptionArn: 'arn:aws:sns:sell-sub',
+          // sellQuery is undefined — query removed
+        },
+        previousStatus: 'active',
+        queriesChanged: true,
+      });
+
+      await handler(event);
+
+      const { UnsubscribeCommand, SetSubscriptionAttributesCommand } = require('@aws-sdk/client-sns');
+      // Buy: update filter policy
+      expect(SetSubscriptionAttributesCommand).toHaveBeenCalledTimes(1);
+      // Sell: unsubscribe
+      expect(UnsubscribeCommand).toHaveBeenCalledTimes(1);
+      expect(UnsubscribeCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ SubscriptionArn: 'arn:aws:sns:sell-sub' }),
       );
     });
 
@@ -211,7 +295,7 @@ describe('bot-lifecycle-handler', () => {
         bot: {
           ...baseBot,
           status: 'active',
-          subscriptionArn: 'arn:aws:sns:sub-001',
+          buySubscriptionArn: 'arn:aws:sns:buy-sub',
         },
         previousStatus: 'active',
         queriesChanged: false,
@@ -242,28 +326,50 @@ describe('bot-lifecycle-handler', () => {
    * Tests for BotDeleted events.
    */
   describe('BotDeleted events', () => {
-    /** Verifies unsubscribe when a bot with a subscription ARN is deleted. */
-    it('unsubscribes when a subscribed bot is deleted', async () => {
-      mockSnsSend.mockResolvedValueOnce({});
+    /** Verifies unsubscribe when a bot with both subscriptions is deleted. */
+    it('unsubscribes both when a fully subscribed bot is deleted', async () => {
+      mockSnsSend.mockResolvedValue({});
 
       const event = buildEvent<BotDeletedDetail>('BotDeleted', {
         sub: 'user-123',
         botId: 'bot-001',
-        subscriptionArn: 'arn:aws:sns:sub-001',
+        buySubscriptionArn: 'arn:aws:sns:buy-sub',
+        sellSubscriptionArn: 'arn:aws:sns:sell-sub',
       });
 
       await handler(event);
 
       const { UnsubscribeCommand } = require('@aws-sdk/client-sns');
+      expect(UnsubscribeCommand).toHaveBeenCalledTimes(2);
       expect(UnsubscribeCommand).toHaveBeenCalledWith(
-        expect.objectContaining({
-          SubscriptionArn: 'arn:aws:sns:sub-001',
-        }),
+        expect.objectContaining({ SubscriptionArn: 'arn:aws:sns:buy-sub' }),
+      );
+      expect(UnsubscribeCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ SubscriptionArn: 'arn:aws:sns:sell-sub' }),
       );
     });
 
-    /** Verifies no action when a deleted bot has no subscription ARN. */
-    it('does not unsubscribe when deleted bot has no subscription ARN', async () => {
+    /** Verifies only buy unsubscribe when deleted bot has only buy subscription. */
+    it('unsubscribes only buy when deleted bot has only buySubscriptionArn', async () => {
+      mockSnsSend.mockResolvedValueOnce({});
+
+      const event = buildEvent<BotDeletedDetail>('BotDeleted', {
+        sub: 'user-123',
+        botId: 'bot-001',
+        buySubscriptionArn: 'arn:aws:sns:buy-sub',
+      });
+
+      await handler(event);
+
+      const { UnsubscribeCommand } = require('@aws-sdk/client-sns');
+      expect(UnsubscribeCommand).toHaveBeenCalledTimes(1);
+      expect(UnsubscribeCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ SubscriptionArn: 'arn:aws:sns:buy-sub' }),
+      );
+    });
+
+    /** Verifies no action when a deleted bot has no subscription ARNs. */
+    it('does not unsubscribe when deleted bot has no subscription ARNs', async () => {
       const event = buildEvent<BotDeletedDetail>('BotDeleted', {
         sub: 'user-123',
         botId: 'bot-001',

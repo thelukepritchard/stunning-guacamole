@@ -33,18 +33,23 @@ async function deleteBotRecords(tableName: string, botId: string): Promise<void>
     const items = result.Items ?? [];
     lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
 
-    // BatchWrite supports up to 25 items per call
+    // BatchWrite supports up to 25 items per call; retry any UnprocessedItems
     for (let i = 0; i < items.length; i += 25) {
       const batch = items.slice(i, i + 25);
-      await ddbDoc.send(new BatchWriteCommand({
-        RequestItems: {
-          [tableName]: batch.map((item) => ({
-            DeleteRequest: {
-              Key: { botId: item.botId, timestamp: item.timestamp },
-            },
-          })),
-        },
-      }));
+      let requestItems: Record<string, { DeleteRequest: { Key: Record<string, unknown> } }[]> | undefined = {
+        [tableName]: batch.map((item) => ({
+          DeleteRequest: {
+            Key: { botId: item.botId, timestamp: item.timestamp },
+          },
+        })),
+      };
+
+      do {
+        const result = await ddbDoc.send(new BatchWriteCommand({ RequestItems: requestItems }));
+        requestItems = result.UnprocessedItems && Object.keys(result.UnprocessedItems).length > 0
+          ? result.UnprocessedItems as typeof requestItems
+          : undefined;
+      } while (requestItems);
     }
   } while (lastEvaluatedKey);
 }
@@ -53,9 +58,9 @@ async function deleteBotRecords(tableName: string, botId: string): Promise<void>
  * Deletes a bot by ID for the authenticated user,
  * along with all associated trade and performance records.
  *
- * Fetches the bot before deletion to capture the subscriptionArn
+ * Fetches the bot before deletion to capture subscription ARNs
  * for the BotDeleted event, enabling the lifecycle handler to
- * clean up the SNS subscription.
+ * clean up the SNS subscriptions.
  *
  * @param event - The incoming API Gateway event.
  * @returns A JSON response confirming deletion.
@@ -67,7 +72,7 @@ export async function deleteBot(event: APIGatewayProxyEvent): Promise<APIGateway
   const botId = event.pathParameters?.botId;
   if (!botId) return jsonResponse(400, { error: 'Missing botId' });
 
-  // Fetch bot before deletion to capture subscriptionArn for event
+  // Fetch bot before deletion to capture subscription ARNs for event
   const existing = await ddbDoc.send(new GetCommand({
     TableName: process.env.BOTS_TABLE_NAME!,
     Key: { sub, botId },
@@ -94,7 +99,8 @@ export async function deleteBot(event: APIGatewayProxyEvent): Promise<APIGateway
           Detail: JSON.stringify({
             sub,
             botId,
-            subscriptionArn: bot.subscriptionArn,
+            buySubscriptionArn: bot.buySubscriptionArn,
+            sellSubscriptionArn: bot.sellSubscriptionArn,
           } satisfies BotDeletedDetail),
         }],
       }));

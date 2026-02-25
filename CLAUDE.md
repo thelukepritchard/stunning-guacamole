@@ -16,10 +16,14 @@ src/
 ├── webapp/               # Vite + React 19 authenticated dashboard (Cognito-gated)
 ├── website/              # Vite + React 19 public marketing site
 └── domains/              # Backend domain logic (Lambda handlers)
-    ├── portfolio/        # Portfolio domain — CRUD via API Gateway
+    ├── portfolio/        # Portfolio domain — user portfolios, performance tracking, leaderboard
     │   ├── index.ts      # Lambda entry point + route dispatch
+    │   ├── types.ts      # Shared types (PortfolioRecord, PortfolioPerformanceRecord)
     │   ├── utils.ts      # jsonResponse helper & RouteHandler type
-    │   └── routes/       # One file per route handler
+    │   ├── routes/       # API route handlers (portfolio, performance, leaderboard)
+    │   └── async/        # Event-driven handlers
+    │       ├── post-confirmation.ts           # Cognito trigger -> create portfolio entry
+    │       └── portfolio-performance-recorder.ts # EventBridge 5-min schedule -> aggregated P&L snapshots
     ├── orderbook/        # Orderbook domain — CRUD via API Gateway
     │   ├── index.ts
     │   ├── utils.ts
@@ -31,11 +35,11 @@ src/
     └── trading/          # Trading domain — bots, indicators, trade signals
         ├── index.ts      # Lambda entry point + route dispatch
         ├── utils.ts      # jsonResponse helper & RouteHandler type
-        ├── types.ts      # Shared types (BotRecord, TradeRecord, PriceHistoryRecord, BotPerformanceRecord, IndicatorSnapshot) + EventBridge event types
+        ├── types.ts      # Shared types (BotRecord, TradeRecord, SizingConfig, StopLossConfig, TakeProfitConfig, PriceHistoryRecord, BotPerformanceRecord, IndicatorSnapshot) + EventBridge event types
         ├── indicators.ts # Technical indicator calculations (SMA, EMA, RSI, MACD, BB)
         ├── rule-evaluator.ts  # Recursive rule tree evaluator
         ├── filter-policy.ts   # SNS filter policy generator
-        ├── routes/       # API route handlers (CRUD bots + trades + price history + bot performance), publish EventBridge events
+        ├── routes/       # API route handlers (CRUD bots + trades + price history + bot performance + exchange configs), publish EventBridge events
         └── async/        # Event-driven handlers
             ├── price-publisher.ts         # EventBridge schedule -> Binance -> SNS + price history DynamoDB
             ├── bot-executor.ts            # SNS -> rule eval -> trade record
@@ -45,12 +49,12 @@ src/
 infrastructure/           # AWS CDK v2 project (separate package)
 ├── bin/infrastructure.ts # CDK app entry point
 └── lib/
-    ├── auth.ts           # Cognito User Pool + Client (AuthStack)
+    ├── auth.ts           # Cognito User Pool + Client + Portfolio table + post-confirmation trigger (AuthStack)
     ├── rest-api.ts       # API Gateway REST API + Cognito Authorizer (RestApiStack)
-    ├── domain-portfolio.ts   # Portfolio Lambda + API routes (DomainPortfolioStack)
+    ├── domain-portfolio.ts   # Portfolio Lambda (2 functions) + DynamoDB (portfolio-performance) + EventBridge 5-min schedule + API routes (DomainPortfolioStack)
     ├── domain-orderbook.ts   # Orderbook Lambda + API routes (DomainOrderbookStack)
     ├── domain-core.ts    # Core Lambda + DynamoDB Feedback table + API routes (DomainCoreStack)
-    ├── domain-trading.ts # Trading Lambda (5 functions) + DynamoDB (bots + trades + price-history + bot-performance) + SNS + EventBridge events (DomainTradingStack)
+    ├── domain-trading.ts # Trading Lambda (5 functions) + DynamoDB (bots + trades + price-history + bot-performance + settings) + KMS + SNS + EventBridge events (DomainTradingStack)
     ├── auth-page.ts      # S3 + CloudFront for auth page SPA (AuthPageStack)
     ├── webapp.ts         # S3 + CloudFront for authenticated dashboard (WebappStack)
     └── website.ts        # S3 + CloudFront for public marketing site (WebsiteStack)
@@ -80,6 +84,23 @@ Design tokens and global CSS live in `src/shared/styles/` and are shared between
 
 - All functions are to be commented in JSDoc style
 - Lambda functions target Node.js 24
+
+## Agents
+
+This project has custom agents in `.claude/agents/`. Use these instead of doing the work manually:
+
+- **infra-deployer** — Deploys infrastructure to AWS via `ENV=prod cdk deploy`. Use whenever the user wants to deploy, push to prod, or run CDK. Do not run CDK deploy commands manually.
+- **notion-context-retriever** — Searches the Notion workspace for project documentation. Use proactively before implementing or modifying any feature to ensure alignment with specs. Also use when the user asks how something works.
+- **tech-lead-reviewer** — Reviews code for completeness, coding standards, security, and quality. Use proactively after completing a feature, fixing a bug, or making significant code changes.
+- **lead-tester** — Runs tests, identifies coverage gaps, and writes missing tests. Use proactively after writing or modifying any meaningful code.
+
+### Agent workflow
+
+When completing a feature or significant code change, follow this workflow:
+1. **Before starting**: Launch `notion-context-retriever` to fetch relevant documentation (Note you may also call this at anytime to retrieve documentation)
+2. **After writing code**: Launch `lead-tester` to verify tests pass and coverage is adequate. 
+3. **After tests pass**: Launch `tech-lead-reviewer` to review code quality and standards. Only do this when the task is multiple file changes
+4. **When deploying**: Launch `infra-deployer` to deploy infrastructure changes
 
 ## General Expectations
 

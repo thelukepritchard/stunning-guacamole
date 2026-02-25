@@ -13,6 +13,9 @@ const mockUpdateBot = jest.fn().mockResolvedValue(mockResponse);
 const mockDeleteBot = jest.fn().mockResolvedValue(mockResponse);
 const mockListTrades = jest.fn().mockResolvedValue(mockResponse);
 const mockListBotTrades = jest.fn().mockResolvedValue(mockResponse);
+const mockGetSettings = jest.fn().mockResolvedValue(mockResponse);
+const mockUpdateSettings = jest.fn().mockResolvedValue(mockResponse);
+const mockGetExchangeOptions = jest.fn().mockResolvedValue(mockResponse);
 
 jest.mock('../routes/list-bots', () => ({ listBots: mockListBots }));
 jest.mock('../routes/create-bot', () => ({ createBot: mockCreateBot }));
@@ -21,6 +24,9 @@ jest.mock('../routes/update-bot', () => ({ updateBot: mockUpdateBot }));
 jest.mock('../routes/delete-bot', () => ({ deleteBot: mockDeleteBot }));
 jest.mock('../routes/list-trades', () => ({ listTrades: mockListTrades }));
 jest.mock('../routes/list-bot-trades', () => ({ listBotTrades: mockListBotTrades }));
+jest.mock('../routes/get-settings', () => ({ getSettings: mockGetSettings }));
+jest.mock('../routes/update-settings', () => ({ updateSettings: mockUpdateSettings }));
+jest.mock('../routes/get-exchange-options', () => ({ getExchangeOptions: mockGetExchangeOptions }));
 
 import { handler } from '../index';
 import { buildEvent } from '../../test-utils';
@@ -118,6 +124,36 @@ describe('trading handler', () => {
     const result = await handler(event);
 
     expect(mockListBotTrades).toHaveBeenCalledWith(event);
+    expect(result).toBe(mockResponse);
+  });
+
+  /** Verifies GET /trading/settings dispatches to getSettings. */
+  it('routes GET /trading/settings to getSettings', async () => {
+    const event = buildEvent({ httpMethod: 'GET', resource: '/trading/settings' });
+
+    const result = await handler(event);
+
+    expect(mockGetSettings).toHaveBeenCalledWith(event);
+    expect(result).toBe(mockResponse);
+  });
+
+  /** Verifies PUT /trading/settings dispatches to updateSettings. */
+  it('routes PUT /trading/settings to updateSettings', async () => {
+    const event = buildEvent({ httpMethod: 'PUT', resource: '/trading/settings' });
+
+    const result = await handler(event);
+
+    expect(mockUpdateSettings).toHaveBeenCalledWith(event);
+    expect(result).toBe(mockResponse);
+  });
+
+  /** Verifies GET /trading/settings/exchange-options dispatches to getExchangeOptions. */
+  it('routes GET /trading/settings/exchange-options to getExchangeOptions', async () => {
+    const event = buildEvent({ httpMethod: 'GET', resource: '/trading/settings/exchange-options' });
+
+    const result = await handler(event);
+
+    expect(mockGetExchangeOptions).toHaveBeenCalledWith(event);
     expect(result).toBe(mockResponse);
   });
 

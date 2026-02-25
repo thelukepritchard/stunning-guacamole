@@ -197,37 +197,8 @@ describe('generateFilterPolicy', () => {
     expect(policy.macd_signal).toBeUndefined();
   });
 
-  /** Verifies sellQuery is used when only sellQuery is provided. */
-  it('extracts rules from sellQuery when only sellQuery exists', () => {
-    const sellQuery: RuleGroup = {
-      combinator: 'and',
-      rules: [{ field: 'rsi_14', operator: '>', value: '70' }],
-    };
-
-    const policy = generateFilterPolicy('BTC/USDT', undefined, sellQuery);
-
-    expect(policy.pair).toEqual(['BTC/USDT']);
-    expect(policy.rsi_14).toEqual([{ numeric: ['>', 70] }]);
-  });
-
-  /** Verifies pair-only filter when both buyQuery and sellQuery exist. */
-  it('returns pair-only filter when both buyQuery and sellQuery exist', () => {
-    const buyQuery: RuleGroup = {
-      combinator: 'and',
-      rules: [{ field: 'rsi_14', operator: '<', value: '30' }],
-    };
-    const sellQuery: RuleGroup = {
-      combinator: 'and',
-      rules: [{ field: 'rsi_14', operator: '>', value: '70' }],
-    };
-
-    const policy = generateFilterPolicy('BTC/USDT', buyQuery, sellQuery);
-
-    expect(policy).toEqual({ pair: ['BTC/USDT'] });
-  });
-
-  /** Verifies pair-only filter when no queries are provided. */
-  it('returns pair-only filter when no queries are provided', () => {
+  /** Verifies pair-only filter when no query is provided. */
+  it('returns pair-only filter when no query is provided', () => {
     const policy = generateFilterPolicy('BTC/USDT');
 
     expect(policy).toEqual({ pair: ['BTC/USDT'] });

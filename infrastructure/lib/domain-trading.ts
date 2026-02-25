@@ -7,6 +7,7 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
 
@@ -25,13 +26,18 @@ export interface DomainTradingStackProps extends cdk.NestedStackProps {
 /**
  * Trading domain stack.
  *
- * Creates DynamoDB tables (bots, trades, price history, bot performance),
+ * Creates DynamoDB tables (bots, trades, price history, bot performance,
+ * exchange configs), a KMS key for encrypting exchange API credentials,
  * an SNS topic for indicator distribution, five Lambda functions (API handler,
  * price publisher, bot executor, lifecycle handler, performance recorder),
  * EventBridge scheduling and bot lifecycle event routing, and wires
  * Cognito-protected API routes under `/trading`.
  */
 export class DomainTradingStack extends cdk.NestedStack {
+
+  /** The bot performance DynamoDB table (exposed for cross-domain reads). */
+  public readonly botPerformanceTable: dynamodb.Table;
+
   constructor(scope: Construct, id: string, props: DomainTradingStackProps) {
     super(scope, id, props);
 
@@ -47,8 +53,13 @@ export class DomainTradingStack extends cdk.NestedStack {
     });
 
     botsTable.addGlobalSecondaryIndex({
-      indexName: 'subscriptionArn-index',
-      partitionKey: { name: 'subscriptionArn', type: dynamodb.AttributeType.STRING },
+      indexName: 'buySubscriptionArn-index',
+      partitionKey: { name: 'buySubscriptionArn', type: dynamodb.AttributeType.STRING },
+    });
+
+    botsTable.addGlobalSecondaryIndex({
+      indexName: 'sellSubscriptionArn-index',
+      partitionKey: { name: 'sellSubscriptionArn', type: dynamodb.AttributeType.STRING },
     });
 
     const tradesTable = new dynamodb.Table(this, 'TradesTable', {
@@ -82,11 +93,28 @@ export class DomainTradingStack extends cdk.NestedStack {
       timeToLiveAttribute: 'ttl',
     });
 
-    // GSI for future portfolio-level queries — get all performance snapshots for a user
+    this.botPerformanceTable = botPerformanceTable;
+
+    // GSI for portfolio-level queries — get all performance snapshots for a user
     botPerformanceTable.addGlobalSecondaryIndex({
       indexName: 'sub-index',
       partitionKey: { name: 'sub', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+    });
+
+    // Trading Settings table — stores exchange, base currency, and encrypted API credentials per user
+    const settingsTable = new dynamodb.Table(this, 'SettingsTable', {
+      tableName: `${props.name}-${props.environment}-trading-settings`,
+      partitionKey: { name: 'sub', type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // KMS key for encrypting exchange API credentials
+    const exchangeKey = new kms.Key(this, 'ExchangeCredentialsKey', {
+      alias: `${props.name}-${props.environment}-trading-exchange-credentials`,
+      description: 'Encrypts exchange API keys and secrets for the trading domain',
+      enableKeyRotation: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
     // ─── SNS Topic ────────────────────────────────────────────────
@@ -108,13 +136,17 @@ export class DomainTradingStack extends cdk.NestedStack {
         TRADES_TABLE_NAME: tradesTable.tableName,
         PRICE_HISTORY_TABLE_NAME: priceHistoryTable.tableName,
         BOT_PERFORMANCE_TABLE_NAME: botPerformanceTable.tableName,
+        SETTINGS_TABLE_NAME: settingsTable.tableName,
+        KMS_KEY_ID: exchangeKey.keyId,
       },
     });
 
     botsTable.grantReadWriteData(tradingApiHandler);
     tradesTable.grantReadWriteData(tradingApiHandler);
     priceHistoryTable.grantReadData(tradingApiHandler);
-    botPerformanceTable.grantReadData(tradingApiHandler);
+    botPerformanceTable.grantReadWriteData(tradingApiHandler);
+    settingsTable.grantReadWriteData(tradingApiHandler);
+    exchangeKey.grantEncryptDecrypt(tradingApiHandler);
 
     // Grant the API handler permission to publish EventBridge events
     tradingApiHandler.addToRolePolicy(new iam.PolicyStatement({
@@ -282,5 +314,19 @@ export class DomainTradingStack extends cdk.NestedStack {
     botPerformanceResource.addCorsPreflight(corsOptions);
     // GET /trading/bots/{botId}/performance — bot P&L time series
     botPerformanceResource.addMethod('GET', integration, methodOptions);
+
+    // /trading/settings
+    const settingsResource = tradingResource.addResource('settings');
+    settingsResource.addCorsPreflight(corsOptions);
+    // GET /trading/settings — get trading settings
+    settingsResource.addMethod('GET', integration, methodOptions);
+    // PUT /trading/settings — update trading settings
+    settingsResource.addMethod('PUT', integration, methodOptions);
+
+    // /trading/settings/exchange-options
+    const exchangeOptionsResource = settingsResource.addResource('exchange-options');
+    exchangeOptionsResource.addCorsPreflight(corsOptions);
+    // GET /trading/settings/exchange-options — list available exchanges and base currencies
+    exchangeOptionsResource.addMethod('GET', integration, methodOptions);
   }
 }

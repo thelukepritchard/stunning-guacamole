@@ -32,8 +32,9 @@ const regionalCertificateArn = 'arn:aws:acm:ap-southeast-2:090517336066:certific
  * Root stack that composes all nested stacks.
  *
  * Dependency flow:
- *   AuthStack -> RestApiStack -> Portfolio + Orderbook + Core + Trading
- *   AuthPageStack, WebappStack, WebsiteStack (independent)
+ *   AuthStack -> RestApiStack -> Trading -> Portfolio (+ Orderbook, Core)
+ *   Portfolio depends on Auth (portfolioTable) and Trading (botPerformanceTable)
+ *   WebappStack, WebsiteStack (independent)
  */
 class InfrastructureStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -76,13 +77,6 @@ class InfrastructureStack extends cdk.Stack {
       hostedZone,
     });
 
-    new DomainPortfolioStack(this, `DomainPortfolioStack`, {
-      name,
-      environment,
-      api: restApi.api,
-      authorizer: restApi.authorizer,
-    });
-
     new DomainOrderbookStack(this, `DomainOrderbookStack`, {
       name,
       environment,
@@ -97,11 +91,21 @@ class InfrastructureStack extends cdk.Stack {
       authorizer: restApi.authorizer,
     });
 
-    new DomainTradingStack(this, `DomainTradingStack`, {
+    // Trading must be created before Portfolio (portfolio reads bot-performance table)
+    const trading = new DomainTradingStack(this, `DomainTradingStack`, {
       name,
       environment,
       api: restApi.api,
       authorizer: restApi.authorizer,
+    });
+
+    new DomainPortfolioStack(this, `DomainPortfolioStack`, {
+      name,
+      environment,
+      api: restApi.api,
+      authorizer: restApi.authorizer,
+      portfolioTable: auth.portfolioTable,
+      botPerformanceTable: trading.botPerformanceTable,
     });
 
     new WebappStack(this, `WebappStack`, {

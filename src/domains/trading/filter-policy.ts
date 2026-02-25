@@ -65,36 +65,28 @@ function extractRules(query: RuleGroup, policy: Record<string, unknown>): void {
 }
 
 /**
- * Generates an SNS filter policy from a bot's buy and/or sell rule groups.
+ * Generates an SNS filter policy for a single rule group (buy or sell).
  *
- * When only one query exists, extracts top-level AND rules for pre-filtering.
- * When both queries exist, falls back to pair-only filtering since the union
- * of conditions may conflict. The bot executor re-evaluates the full rule
- * trees regardless.
+ * Extracts top-level AND rules for pre-filtering via SNS MessageAttributes.
+ * Nested OR groups and non-AND combinators are skipped — the bot executor
+ * re-evaluates the full rule tree regardless.
  *
  * Always includes a `pair` attribute for pair-level filtering.
  *
  * @param pair - The trading pair (e.g. "BTC/USDT").
- * @param buyQuery - The bot's buy rule group (optional).
- * @param sellQuery - The bot's sell rule group (optional).
+ * @param query - The rule group to derive the filter policy from (optional).
  * @returns An SNS filter policy object.
  */
 export function generateFilterPolicy(
   pair: string,
-  buyQuery?: RuleGroup,
-  sellQuery?: RuleGroup,
+  query?: RuleGroup,
 ): Record<string, unknown> {
   const policy: Record<string, unknown> = {
     pair: [pair],
   };
 
-  // When both queries exist, use pair-only filtering (executor handles full eval)
-  if (buyQuery && sellQuery) return policy;
-
-  // Extract rules from whichever single query exists
-  const singleQuery = buyQuery ?? sellQuery;
-  if (singleQuery) {
-    extractRules(singleQuery, policy);
+  if (query) {
+    extractRules(query, policy);
   }
 
   return policy;

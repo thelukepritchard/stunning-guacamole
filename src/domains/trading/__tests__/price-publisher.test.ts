@@ -1,7 +1,16 @@
 const mockSnsSend = jest.fn();
+const mockDdbSend = jest.fn();
+
 jest.mock('@aws-sdk/client-sns', () => ({
   SNSClient: jest.fn(() => ({ send: mockSnsSend })),
   PublishCommand: jest.fn((params) => ({ ...params, _type: 'Publish' })),
+}));
+jest.mock('@aws-sdk/client-dynamodb', () => ({
+  DynamoDBClient: jest.fn(() => ({})),
+}));
+jest.mock('@aws-sdk/lib-dynamodb', () => ({
+  DynamoDBDocumentClient: { from: jest.fn(() => ({ send: mockDdbSend })) },
+  PutCommand: jest.fn((params) => ({ ...params, _type: 'Put' })),
 }));
 
 import { handler } from '../async/price-publisher';
@@ -31,7 +40,9 @@ describe('price-publisher handler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.SNS_TOPIC_ARN = 'arn:aws:sns:ap-southeast-2:123456789012:PriceTopic';
+    process.env.PRICE_HISTORY_TABLE_NAME = 'PriceHistoryTable';
     mockSnsSend.mockResolvedValue({});
+    mockDdbSend.mockResolvedValue({});
 
     global.fetch = jest.fn((url: unknown) => {
       const urlStr = String(url);

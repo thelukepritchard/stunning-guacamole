@@ -1,32 +1,6 @@
 # Infrastructure
 
-AWS CDK v2 project that provisions the backend for the stunning-guacomole SaaS platform.
-
-## Stack Architecture
-
-A single root `InfrastructureStack` composed of nested stacks:
-
-```
-AuthStack (Cognito User Pool + Client)
-    |
-RestApiStack (API Gateway REST API + Cognito Authorizer)
-    |           |          |         |
-Portfolio    Orderbook    Core    Trading
-
-AuthPageStack  (S3 + CloudFront — auth page SPA)
-WebappStack    (S3 + CloudFront — authenticated dashboard)
-WebsiteStack   (S3 + CloudFront — public marketing site)
-```
-
-- **AuthStack** (`lib/auth.ts`) — Cognito User Pool (self-sign-up enabled, email auto-verified) and User Pool Client.
-- **RestApiStack** (`lib/rest-api.ts`) — API Gateway REST API (REGIONAL endpoint) with a Cognito User Pools authorizer and custom domain.
-- **DomainPortfolioStack** (`lib/domain-portfolio.ts`) — `NodejsFunction` bundled from `src/domains/portfolio/index.ts`, integrated at `ANY /portfolio` and `ANY /portfolio/{id}`, Cognito-protected.
-- **DomainOrderbookStack** (`lib/domain-orderbook.ts`) — `NodejsFunction` bundled from `src/domains/orderbook/index.ts`, integrated at `ANY /orderbook` and `ANY /orderbook/{id}`, Cognito-protected.
-- **DomainCoreStack** (`lib/domain-core.ts`) — DynamoDB `Feedback` table + `NodejsFunction` bundled from `src/domains/core/index.ts`, integrated at `POST /core/feedback`, Cognito-protected.
-- **DomainTradingStack** (`lib/domain-trading.ts`) — DynamoDB `Bots` + `Trades` + `PriceHistory` + `BotPerformance` tables, SNS `Indicators` topic, 5 Lambda functions (API handler, price publisher, bot executor, lifecycle handler, bot performance recorder), EventBridge 1-min price schedule + 5-min performance recorder schedule + bot lifecycle event routing (`signalr.trading` source), API handler granted `events:PutEvents`, integrated at `/trading/bots`, `/trading/bots/{botId}`, `/trading/bots/{botId}/performance`, `/trading/trades`, `/trading/trades/{botId}`, `/trading/prices/{pair}`, Cognito-protected.
-- **AuthPageStack** (`lib/auth-page.ts`) — S3 bucket + CloudFront distribution serving the authentication SPA.
-- **WebappStack** (`lib/webapp.ts`) — S3 bucket + CloudFront distribution serving the authenticated dashboard, with custom domain and Route53 alias.
-- **WebsiteStack** (`lib/website.ts`) — S3 bucket + CloudFront distribution serving the public marketing site, with custom domain and Route53 alias.
+AWS CDK v2 project that provisions the backend for the webapp.
 
 All resources follow the naming convention `${name}-${environment}-${description}` (e.g. `techniverse-dev-user-pool`). The `name` (`"techniverse"`) is defined in `bin/infrastructure.ts` and passed to all nested stacks via props.
 
@@ -54,23 +28,10 @@ Each stack (WebappStack, WebsiteStack, RestApiStack) creates its own Route53 A r
 The `ENV` environment variable is required for all CDK commands.
 
 ```bash
-# Build TypeScript
-npm run build
-
-# Run tests
-npm test
-
-# Synth CloudFormation template
-ENV=dev npx cdk synth
-
-# Deploy to dev
-ENV=dev npx cdk deploy
-
-# Deploy to prod
 ENV=prod npx cdk deploy
 
 # Diff against deployed stack
-ENV=dev npx cdk diff
+ENV=prod npx cdk diff
 ```
 
 ## Adding a New Domain Stack

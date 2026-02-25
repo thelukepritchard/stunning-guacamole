@@ -4,6 +4,8 @@ import { createPortfolio } from './routes/create-portfolio';
 import { getPortfolio } from './routes/get-portfolio';
 import { updatePortfolio } from './routes/update-portfolio';
 import { deletePortfolio } from './routes/delete-portfolio';
+import { getPortfolioPerformance } from './routes/get-portfolio-performance';
+import { getLeaderboard } from './routes/get-leaderboard';
 
 /**
  * Lambda entry-point. Routes the incoming API Gateway request to the
@@ -16,11 +18,13 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   const routeKey = `${event.httpMethod} ${event.resource}`;
 
   switch (routeKey) {
-    case 'GET /portfolio':          return listPortfolios(event);
-    case 'POST /portfolio':         return createPortfolio(event);
-    case 'GET /portfolio/{id}':     return getPortfolio(event);
-    case 'PUT /portfolio/{id}':     return updatePortfolio(event);
-    case 'DELETE /portfolio/{id}':  return deletePortfolio(event);
+    case 'GET /portfolio':                return listPortfolios(event);
+    case 'POST /portfolio':               return createPortfolio(event);
+    case 'GET /portfolio/{id}':           return getPortfolio(event);
+    case 'PUT /portfolio/{id}':           return updatePortfolio(event);
+    case 'DELETE /portfolio/{id}':        return deletePortfolio(event);
+    case 'GET /portfolio/performance':    return getPortfolioPerformance(event);
+    case 'GET /portfolio/leaderboard':    return getLeaderboard(event);
     default:
       return {
         statusCode: 404,

@@ -12,6 +12,7 @@ import Orderbook from './pages/Orderbook';
 import Bots from './pages/Bots';
 import BotDetail from './pages/BotDetail';
 import BotView from './pages/BotView';
+import Leaderboard from './pages/Leaderboard';
 import Settings from './pages/Settings';
 import ReleaseNotes from './pages/ReleaseNotes';
 
@@ -35,6 +36,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="portfolios" element={<Portfolios />} />
             <Route path="orderbook" element={<Orderbook />} />
+            <Route path="leaderboard" element={<Leaderboard />} />
             <Route path="bots" element={<Bots />} />
             <Route path="bots/:pair" element={<BotDetail />} />
             <Route path="bots/view/:botId" element={<BotView />} />
