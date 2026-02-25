@@ -45,9 +45,9 @@ export class RestApiStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: RestApiStackProps) {
     super(scope, id, props);
 
-    this.api = new apigateway.RestApi(this, 'RestApi', {
-      restApiName: `${props.name}-${props.environment}-rest-api`,
-      endpointTypes: [apigateway.EndpointType.REGIONAL],
+    this.api = new apigateway.RestApi(this, 'DomainRestApi', {
+      restApiName: `${props.name}-${props.environment}-domain-rest-api`,
+      endpointTypes: [apigateway.EndpointType.EDGE],
     });
 
     this.authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoAuthorizer', {
@@ -60,7 +60,7 @@ export class RestApiStack extends cdk.NestedStack {
       const domain = this.api.addDomainName('CustomDomain', {
         domainName: props.domainName,
         certificate: props.certificate,
-        endpointType: apigateway.EndpointType.REGIONAL,
+        endpointType: apigateway.EndpointType.EDGE,
       });
 
       if (props.hostedZone) {

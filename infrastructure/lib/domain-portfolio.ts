@@ -63,6 +63,7 @@ export class DomainPortfolioStack extends cdk.NestedStack {
     const handler = new NodejsFunction(this, 'PortfolioHandler', {
       functionName: `${props.name}-${props.environment}-portfolio-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/portfolio/index.ts'),
       handler: 'handler',
       environment: {
@@ -78,6 +79,7 @@ export class DomainPortfolioStack extends cdk.NestedStack {
     const portfolioPerformanceRecorderHandler = new NodejsFunction(this, 'PortfolioPerformanceRecorderHandler', {
       functionName: `${props.name}-${props.environment}-portfolio-perf-recorder`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/portfolio/async/portfolio-performance-recorder.ts'),
       handler: 'handler',
       timeout: cdk.Duration.seconds(60),

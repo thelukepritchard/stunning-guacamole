@@ -44,6 +44,7 @@ export class DomainCoreStack extends cdk.NestedStack {
     const handler = new NodejsFunction(this, 'CoreHandler', {
       functionName: `${props.name}-${props.environment}-core-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/core/index.ts'),
       handler: 'handler',
       environment: {

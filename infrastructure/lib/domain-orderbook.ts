@@ -37,6 +37,7 @@ export class DomainOrderbookStack extends cdk.NestedStack {
     const handler = new NodejsFunction(this, 'OrderbookHandler', {
       functionName: `${props.name}-${props.environment}-orderbook-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/orderbook/index.ts'),
       handler: 'handler',
     });

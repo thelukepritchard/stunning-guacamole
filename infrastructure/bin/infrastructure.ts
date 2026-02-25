@@ -19,7 +19,7 @@ if (!process.env.ENV) {
   throw new Error("ENV environment variable is not set. Please set it to the desired environment (e.g., 'prod', 'dev').");
 }
 
-const name = "techniverse"
+const name = "signalr";
 const environment = process.env.ENV
 
 /** CloudFront ACM certificate ARN (must be in us-east-1). */
@@ -42,7 +42,7 @@ class InfrastructureStack extends cdk.Stack {
 
     // DNS — look up hosted zone and import certificates
     const hostedZone = route53.HostedZone.fromLookup(this, 'HostedZone', {
-      domainName: `${name}.com.au`,
+      domainName: `techniverse.com.au`,
     });
 
     const cloudfrontCertificate = acm.Certificate.fromCertificateArn(
@@ -55,15 +55,15 @@ class InfrastructureStack extends cdk.Stack {
 
     // Compute domain names based on environment
     const webappDomainName = environment === 'prod'
-      ? `trade.${name}.com.au`
+      ? `trade.techniverse.com.au`
       : `trade-${environment}.${name}.com.au`;
 
     const websiteDomainName = environment === 'prod'
-      ? `${name}.com.au`
+      ? `techniverse.com.au`
       : `site-${environment}.${name}.com.au`;
 
     const apiDomainName = environment === 'prod'
-      ? `api.${name}.com.au`
+      ? `api.techniverse.com.au`
       : `api-${environment}.${name}.com.au`;
 
     const auth = new AuthStack(this, `AuthStack`, { name, environment });
@@ -73,7 +73,7 @@ class InfrastructureStack extends cdk.Stack {
       environment,
       userPool: auth.userPool,
       domainName: apiDomainName,
-      certificate: regionalCertificate,
+      certificate: cloudfrontCertificate,
       hostedZone,
     });
 
@@ -126,7 +126,7 @@ class InfrastructureStack extends cdk.Stack {
   }
 }
 
-new InfrastructureStack(app, `Tradeblocks-${environment === "dev" ? "dev" : "prod"}`, {
+new InfrastructureStack(app, `${name}-${environment}`, {
   env: {
     account: '090517336066',
     region: 'ap-southeast-2'

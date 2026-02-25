@@ -129,6 +129,7 @@ export class DomainTradingStack extends cdk.NestedStack {
     const tradingApiHandler = new NodejsFunction(this, 'TradingApiHandler', {
       functionName: `${props.name}-${props.environment}-trading-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/trading/index.ts'),
       handler: 'handler',
       environment: {
@@ -141,11 +142,24 @@ export class DomainTradingStack extends cdk.NestedStack {
       },
     });
 
-    botsTable.grantReadWriteData(tradingApiHandler);
-    tradesTable.grantReadWriteData(tradingApiHandler);
-    priceHistoryTable.grantReadData(tradingApiHandler);
-    botPerformanceTable.grantReadWriteData(tradingApiHandler);
-    settingsTable.grantReadWriteData(tradingApiHandler);
+    // Consolidated DynamoDB permissions to stay within the 20KB IAM policy limit.
+    // Using a single PolicyStatement instead of individual grant*() calls reduces
+    // the number of policy statements from ~10 to 1.
+    tradingApiHandler.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'dynamodb:BatchGetItem', 'dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan',
+        'dynamodb:BatchWriteItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem',
+        'dynamodb:ConditionCheckItem', 'dynamodb:DescribeTable',
+      ],
+      resources: [
+        botsTable.tableArn, `${botsTable.tableArn}/index/*`,
+        tradesTable.tableArn, `${tradesTable.tableArn}/index/*`,
+        priceHistoryTable.tableArn, `${priceHistoryTable.tableArn}/index/*`,
+        botPerformanceTable.tableArn, `${botPerformanceTable.tableArn}/index/*`,
+        settingsTable.tableArn, `${settingsTable.tableArn}/index/*`,
+      ],
+    }));
+
     exchangeKey.grantEncryptDecrypt(tradingApiHandler);
 
     // Grant the API handler permission to publish EventBridge events
@@ -158,6 +172,7 @@ export class DomainTradingStack extends cdk.NestedStack {
     const pricePublisherHandler = new NodejsFunction(this, 'PricePublisherHandler', {
       functionName: `${props.name}-${props.environment}-trading-price-publisher`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/trading/async/price-publisher.ts'),
       handler: 'handler',
       timeout: cdk.Duration.seconds(30),
@@ -174,6 +189,7 @@ export class DomainTradingStack extends cdk.NestedStack {
     const botExecutorHandler = new NodejsFunction(this, 'BotExecutorHandler', {
       functionName: `${props.name}-${props.environment}-trading-bot-executor`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/trading/async/bot-executor.ts'),
       handler: 'handler',
       environment: {
@@ -196,6 +212,7 @@ export class DomainTradingStack extends cdk.NestedStack {
     const botLifecycleHandler = new NodejsFunction(this, 'BotLifecycleHandler', {
       functionName: `${props.name}-${props.environment}-trading-bot-lifecycle`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/trading/async/bot-lifecycle-handler.ts'),
       handler: 'handler',
       environment: {
@@ -233,6 +250,7 @@ export class DomainTradingStack extends cdk.NestedStack {
     const botPerformanceRecorderHandler = new NodejsFunction(this, 'BotPerformanceRecorderHandler', {
       functionName: `${props.name}-${props.environment}-trading-bot-perf-recorder`,
       runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 256,
       entry: path.join(__dirname, '../../src/domains/trading/async/bot-performance-recorder.ts'),
       handler: 'handler',
       timeout: cdk.Duration.seconds(60),

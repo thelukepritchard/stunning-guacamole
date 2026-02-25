@@ -10,8 +10,8 @@ All domain stacks apply a `Domain` tag (e.g. `Domain: trading`) to all their res
 
 Route53 hosted zone `${name}.com.au` is looked up at synth time. Two pre-provisioned ACM certificates are imported by ARN in `bin/infrastructure.ts`:
 
-- **CloudFront certificate** — must be in **us-east-1** (CloudFront requirement). Covers `${name}.com.au` and `*.${name}.com.au`.
-- **Regional certificate** — must be in **ap-southeast-2** (same region as the stack). Used for the API Gateway custom domain.
+- **CloudFront certificate** — must be in **us-east-1** (CloudFront requirement). Covers `${name}.com.au` and `*.${name}.com.au`. Used for CloudFront distributions and the edge-optimized API Gateway custom domain.
+- **Regional certificate** — must be in **ap-southeast-2** (same region as the stack).
 
 Domain names are environment-dependent:
 
@@ -21,7 +21,9 @@ Domain names are environment-dependent:
 | Website  | `${name}.com.au` | `site-${env}.${name}.com.au` |
 | REST API | `api.${name}.com.au` | `api-${env}.${name}.com.au` |
 
-Each stack (WebappStack, WebsiteStack, RestApiStack) creates its own Route53 A record (alias) pointing to its CloudFront distribution or API Gateway regional domain. DNS props are optional on all stacks to allow tests to run without a hosted zone.
+Each stack (WebappStack, WebsiteStack, RestApiStack) creates its own Route53 A record (alias) pointing to its CloudFront distribution or API Gateway edge endpoint. DNS props are optional on all stacks to allow tests to run without a hosted zone.
+
+The REST API is **edge-optimized** (`EndpointType.EDGE`), which deploys a CloudFront distribution in front of the API Gateway. This requires the ACM certificate to be in **us-east-1** (the CloudFront certificate).
 
 ## Commands
 
@@ -33,6 +35,10 @@ ENV=prod npx cdk deploy
 # Diff against deployed stack
 ENV=prod npx cdk diff
 ```
+
+## Lambda Defaults
+
+All Lambda functions must set `memorySize: 256` (MB).
 
 ## Adding a New Domain Stack
 
