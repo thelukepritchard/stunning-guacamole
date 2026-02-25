@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography';
 import { PieChart } from '@mui/x-charts/PieChart';
 import { portfolios, allocationData, holdings } from '../data/mockData';
 import { typography } from '@shared/styles/tokens';
+import { formatNumber, formatDollar, formatPercent } from '../utils/format';
 
 /** Portfolios page with summary cards, allocation chart, and holdings table. */
 export default function Portfolios() {
@@ -37,7 +38,7 @@ export default function Portfolios() {
                   {p.name}
                 </Typography>
                 <Typography variant="h4" component="p">
-                  ${p.value.toLocaleString()}
+                  {formatDollar(p.value, 0)}
                 </Typography>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
                   <Typography variant="body2" color="text.secondary">
@@ -48,8 +49,7 @@ export default function Portfolios() {
                     fontWeight={600}
                     color={p.change24h >= 0 ? 'success.main' : 'error.main'}
                   >
-                    {p.change24h >= 0 ? '+' : ''}
-                    {p.change24h}%
+                    {formatPercent(p.change24h)}
                   </Typography>
                 </Box>
               </CardContent>
@@ -121,16 +121,16 @@ export default function Portfolios() {
                         <Typography fontWeight={600}>{h.asset}</Typography>
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        {h.amount}
+                        {formatNumber(h.amount, 3)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        ${h.avgCost.toLocaleString()}
+                        {formatDollar(h.avgCost, 0)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        ${h.price.toLocaleString()}
+                        {formatDollar(h.price)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        ${h.value.toLocaleString()}
+                        {formatDollar(h.value)}
                       </TableCell>
                       <TableCell
                         align="right"
@@ -141,8 +141,7 @@ export default function Portfolios() {
                           color: h.pnl >= 0 ? 'success.main' : 'error.main',
                         }}
                       >
-                        {h.pnl >= 0 ? '+' : ''}
-                        {h.pnl}%
+                        {formatPercent(h.pnl)}
                       </TableCell>
                     </TableRow>
                   ))}

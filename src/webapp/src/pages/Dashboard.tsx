@@ -16,6 +16,7 @@ import { BarChart } from '@mui/x-charts/BarChart';
 import StatCard from '../components/StatCard';
 import { dashboardStats, performanceData, volumeData, recentTrades } from '../data/mockData';
 import { typography } from '@shared/styles/tokens';
+import { formatNumber, formatDollar } from '../utils/format';
 
 /** Dashboard landing page with stats, charts, and recent trades. */
 export default function Dashboard() {
@@ -69,12 +70,14 @@ export default function Dashboard() {
                       valueFormatter: (v: number) => performanceData[v]!.date,
                     },
                   ]}
+                  yAxis={[{ valueFormatter: (v: number) => formatDollar(v, 0) }]}
                   series={[
                     {
                       data: performanceData.map((p) => p.value),
                       area: true,
                       color: theme.palette.primary.main,
                       showMark: false,
+                      valueFormatter: (v: number | null) => v != null ? formatDollar(v, 0) : '',
                     },
                   ]}
                   sx={{
@@ -113,10 +116,12 @@ export default function Dashboard() {
                       valueFormatter: (v: number) => volumeData[v]!.date,
                     },
                   ]}
+                  yAxis={[{ valueFormatter: (v: number) => formatDollar(v, 0) }]}
                   series={[
                     {
                       data: volumeData.map((v) => v.volume),
                       color: theme.palette.primary.main,
+                      valueFormatter: (v: number | null) => v != null ? formatDollar(v, 0) : '',
                     },
                   ]}
                 />
@@ -158,13 +163,13 @@ export default function Dashboard() {
                     />
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                    {trade.price.toLocaleString()}
+                    {formatNumber(trade.price, 1)}
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                    {trade.amount}
+                    {formatNumber(trade.amount, 3)}
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                    ${trade.total.toLocaleString()}
+                    {formatDollar(trade.total)}
                   </TableCell>
                   <TableCell>{trade.bot}</TableCell>
                 </TableRow>

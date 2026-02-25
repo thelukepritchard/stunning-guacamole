@@ -14,7 +14,7 @@ describe('generateFilterPolicy', () => {
       rules: [],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.pair).toEqual(['BTC/USDT']);
   });
@@ -26,7 +26,7 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'price', operator: '>', value: '50000' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.price).toEqual([{ numeric: ['>', 50000] }]);
   });
@@ -38,7 +38,7 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'rsi_14', operator: '<', value: '30' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.rsi_14).toEqual([{ numeric: ['<', 30] }]);
   });
@@ -50,7 +50,7 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'volume_24h', operator: '>=', value: '1000' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.volume_24h).toEqual([{ numeric: ['>=', 1000] }]);
   });
@@ -62,7 +62,7 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'ema_12', operator: '<=', value: '49000' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.ema_12).toEqual([{ numeric: ['<=', 49000] }]);
   });
@@ -74,7 +74,7 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'price', operator: '=', value: '50000' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.price).toEqual([{ numeric: ['=', 50000] }]);
   });
@@ -86,7 +86,7 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'rsi_14', operator: 'between', value: '30, 70' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.rsi_14).toEqual([{ numeric: ['>=', 30, '<=', 70] }]);
   });
@@ -98,7 +98,7 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'macd_signal', operator: '=', value: 'bullish_crossover' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.macd_signal).toEqual(['bullish_crossover']);
   });
@@ -110,7 +110,7 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'bb_position', operator: '=', value: 'above_upper' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.bb_position).toEqual(['above_upper']);
   });
@@ -131,7 +131,7 @@ describe('generateFilterPolicy', () => {
       ],
     };
 
-    const policy = generateFilterPolicy(query, 'ETH/USDT');
+    const policy = generateFilterPolicy('ETH/USDT', query);
 
     expect(policy.pair).toEqual(['ETH/USDT']);
     expect(policy.price).toEqual([{ numeric: ['>', 50000] }]);
@@ -149,7 +149,7 @@ describe('generateFilterPolicy', () => {
       ],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy).toEqual({ pair: ['BTC/USDT'] });
   });
@@ -161,7 +161,7 @@ describe('generateFilterPolicy', () => {
       rules: [],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy).toEqual({ pair: ['BTC/USDT'] });
   });
@@ -177,7 +177,7 @@ describe('generateFilterPolicy', () => {
       ],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.pair).toEqual(['BTC/USDT']);
     expect(policy.price).toEqual([{ numeric: ['>', 40000] }]);
@@ -192,8 +192,44 @@ describe('generateFilterPolicy', () => {
       rules: [{ field: 'macd_signal', operator: '>', value: 'above_signal' }],
     };
 
-    const policy = generateFilterPolicy(query, 'BTC/USDT');
+    const policy = generateFilterPolicy('BTC/USDT', query);
 
     expect(policy.macd_signal).toBeUndefined();
+  });
+
+  /** Verifies sellQuery is used when only sellQuery is provided. */
+  it('extracts rules from sellQuery when only sellQuery exists', () => {
+    const sellQuery: RuleGroup = {
+      combinator: 'and',
+      rules: [{ field: 'rsi_14', operator: '>', value: '70' }],
+    };
+
+    const policy = generateFilterPolicy('BTC/USDT', undefined, sellQuery);
+
+    expect(policy.pair).toEqual(['BTC/USDT']);
+    expect(policy.rsi_14).toEqual([{ numeric: ['>', 70] }]);
+  });
+
+  /** Verifies pair-only filter when both buyQuery and sellQuery exist. */
+  it('returns pair-only filter when both buyQuery and sellQuery exist', () => {
+    const buyQuery: RuleGroup = {
+      combinator: 'and',
+      rules: [{ field: 'rsi_14', operator: '<', value: '30' }],
+    };
+    const sellQuery: RuleGroup = {
+      combinator: 'and',
+      rules: [{ field: 'rsi_14', operator: '>', value: '70' }],
+    };
+
+    const policy = generateFilterPolicy('BTC/USDT', buyQuery, sellQuery);
+
+    expect(policy).toEqual({ pair: ['BTC/USDT'] });
+  });
+
+  /** Verifies pair-only filter when no queries are provided. */
+  it('returns pair-only filter when no queries are provided', () => {
+    const policy = generateFilterPolicy('BTC/USDT');
+
+    expect(policy).toEqual({ pair: ['BTC/USDT'] });
   });
 });

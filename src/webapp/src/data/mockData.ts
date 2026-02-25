@@ -85,15 +85,19 @@ export type BotStatus = 'active' | 'paused' | 'draft';
 /** Bot action type. */
 export type BotAction = 'buy' | 'sell';
 
+/** Bot execution mode. */
+export type ExecutionMode = 'once_and_wait' | 'condition_cooldown';
+
 /** A trading bot. */
 export interface Bot {
   id: string;
   name: string;
   pair: string;
-  action: BotAction;
   status: BotStatus;
+  executionMode: ExecutionMode;
   createdAt: string;
-  query: RuleGroupType;
+  buyQuery?: RuleGroupType;
+  sellQuery?: RuleGroupType;
 }
 
 // ─── Dashboard Data ──────────────────────────────────────────────

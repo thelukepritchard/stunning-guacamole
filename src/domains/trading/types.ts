@@ -6,6 +6,9 @@ export type BotStatus = 'active' | 'paused' | 'draft';
 /** Bot trade action. */
 export type BotAction = 'buy' | 'sell';
 
+/** Bot execution mode governing re-trigger behaviour. */
+export type ExecutionMode = 'once_and_wait' | 'condition_cooldown';
+
 /** A single rule — structurally compatible with react-querybuilder's RuleType. */
 export interface Rule {
   field: string;
@@ -25,10 +28,19 @@ export interface BotRecord {
   botId: string;
   name: string;
   pair: string;
-  action: BotAction;
   status: BotStatus;
-  query: RuleGroup;
+  executionMode: ExecutionMode;
+  buyQuery?: RuleGroup;
+  sellQuery?: RuleGroup;
   subscriptionArn?: string;
+  /** Tracks the last action that fired (used by once_and_wait mode). */
+  lastAction?: BotAction;
+  /** Minimum minutes between trades per action (used by condition_cooldown mode). */
+  cooldownMinutes?: number;
+  /** ISO timestamp until which buy trades are locked (set by bot-executor after a buy trade). */
+  buyCooldownUntil?: string;
+  /** ISO timestamp until which sell trades are locked (set by bot-executor after a sell trade). */
+  sellCooldownUntil?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -90,3 +102,27 @@ export const STRING_INDICATOR_FIELDS = [
   'macd_signal',
   'bb_position',
 ] as const;
+
+// ─── EventBridge Event Types ────────────────────────────────────
+
+/** EventBridge event source for the trading domain. */
+export const TRADING_EVENT_SOURCE = 'signalr.trading';
+
+/** Detail payload for BotCreated events. */
+export interface BotCreatedDetail {
+  bot: BotRecord;
+}
+
+/** Detail payload for BotUpdated events. */
+export interface BotUpdatedDetail {
+  bot: BotRecord;
+  previousStatus: BotStatus;
+  queriesChanged: boolean;
+}
+
+/** Detail payload for BotDeleted events. */
+export interface BotDeletedDetail {
+  sub: string;
+  botId: string;
+  subscriptionArn?: string;
+}

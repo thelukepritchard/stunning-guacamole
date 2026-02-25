@@ -33,6 +33,8 @@ export class DomainCoreStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: DomainCoreStackProps) {
     super(scope, id, props);
 
+    cdk.Tags.of(this).add('Domain', 'core');
+
     const feedbackTable = new dynamodb.Table(this, 'FeedbackTable', {
       tableName: `${props.name}-${props.environment}-feedback`,
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },

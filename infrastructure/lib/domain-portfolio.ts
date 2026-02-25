@@ -32,6 +32,8 @@ export class DomainPortfolioStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: DomainPortfolioStackProps) {
     super(scope, id, props);
 
+    cdk.Tags.of(this).add('Domain', 'portfolio');
+
     const handler = new NodejsFunction(this, 'PortfolioHandler', {
       functionName: `${props.name}-${props.environment}-portfolio-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,

@@ -32,6 +32,8 @@ export class DomainOrderbookStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: DomainOrderbookStackProps) {
     super(scope, id, props);
 
+    cdk.Tags.of(this).add('Domain', 'orderbook');
+
     const handler = new NodejsFunction(this, 'OrderbookHandler', {
       functionName: `${props.name}-${props.environment}-orderbook-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,

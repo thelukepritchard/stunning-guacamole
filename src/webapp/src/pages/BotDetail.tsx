@@ -17,7 +17,8 @@ import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useApi } from '../hooks/useApi';
-import type { BotAction, BotStatus } from '../data/mockData';
+import { formatDollar, formatNumber } from '../utils/format';
+import type { BotAction, BotStatus, ExecutionMode } from '../data/mockData';
 import type { RuleGroupType } from 'react-querybuilder';
 
 /** API bot record shape. */
@@ -26,9 +27,10 @@ interface ApiBotRecord {
   botId: string;
   name: string;
   pair: string;
-  action: BotAction;
   status: BotStatus;
-  query: RuleGroupType;
+  executionMode: ExecutionMode;
+  buyQuery?: RuleGroupType;
+  sellQuery?: RuleGroupType;
   createdAt: string;
   updatedAt: string;
 }
@@ -141,7 +143,7 @@ export default function BotDetail() {
                   />
                 </Stack>
                 <Typography variant="caption" color="text.secondary">
-                  {bot.action.toUpperCase()}
+                  {[bot.buyQuery && 'Buy', bot.sellQuery && 'Sell'].filter(Boolean).join(' + ')}
                 </Typography>
               </CardContent>
             </Card>
@@ -184,10 +186,10 @@ export default function BotDetail() {
                     />
                   </TableCell>
                   <TableCell align="right">
-                    ${typeof trade.price === 'number' ? trade.price.toLocaleString(undefined, { minimumFractionDigits: 2 }) : trade.price}
+                    {typeof trade.price === 'number' ? formatDollar(trade.price) : trade.price}
                   </TableCell>
                   <TableCell align="right">
-                    {trade.indicators?.rsi_14 != null ? Number(trade.indicators.rsi_14).toFixed(1) : '—'}
+                    {trade.indicators?.rsi_14 != null ? formatNumber(Number(trade.indicators.rsi_14), 1) : '—'}
                   </TableCell>
                   <TableCell>
                     {trade.indicators?.macd_signal ?? '—'}

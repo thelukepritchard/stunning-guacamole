@@ -6,7 +6,6 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
-import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
@@ -28,12 +27,15 @@ export interface DomainTradingStackProps extends cdk.NestedStackProps {
  *
  * Creates DynamoDB tables (bots + trades), an SNS topic for indicator
  * distribution, four Lambda functions (API handler, price publisher,
- * bot executor, stream handler), EventBridge scheduling, and wires
- * Cognito-protected API routes under `/trading`.
+ * bot executor, lifecycle handler), EventBridge scheduling and bot
+ * lifecycle event routing, and wires Cognito-protected API routes
+ * under `/trading`.
  */
 export class DomainTradingStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: DomainTradingStackProps) {
     super(scope, id, props);
+
+    cdk.Tags.of(this).add('Domain', 'trading');
 
     // ─── DynamoDB Tables ──────────────────────────────────────────
 
@@ -42,7 +44,6 @@ export class DomainTradingStack extends cdk.NestedStack {
       partitionKey: { name: 'sub', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'botId', type: dynamodb.AttributeType.STRING },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
     });
 
     botsTable.addGlobalSecondaryIndex({
@@ -86,6 +87,12 @@ export class DomainTradingStack extends cdk.NestedStack {
     botsTable.grantReadWriteData(tradingApiHandler);
     tradesTable.grantReadWriteData(tradingApiHandler);
 
+    // Grant the API handler permission to publish EventBridge events
+    tradingApiHandler.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['events:PutEvents'],
+      resources: [`arn:aws:events:${this.region}:${this.account}:event-bus/default`],
+    }));
+
     // Price Publisher handler
     const pricePublisherHandler = new NodejsFunction(this, 'PricePublisherHandler', {
       functionName: `${props.name}-${props.environment}-trading-price-publisher`,
@@ -112,21 +119,21 @@ export class DomainTradingStack extends cdk.NestedStack {
       },
     });
 
-    botsTable.grant(botExecutorHandler, 'dynamodb:Query', 'dynamodb:GetItem');
+    botsTable.grant(botExecutorHandler, 'dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:UpdateItem');
     tradesTable.grant(botExecutorHandler, 'dynamodb:PutItem');
 
-    // Per-bot SNS subscriptions are created dynamically by the stream handler.
+    // Per-bot SNS subscriptions are created dynamically by the lifecycle handler.
     // Grant the SNS topic permission to invoke the executor Lambda.
     botExecutorHandler.addPermission('AllowSnsInvoke', {
       principal: new iam.ServicePrincipal('sns.amazonaws.com'),
       sourceArn: indicatorsTopic.topicArn,
     });
 
-    // Bot Stream Handler
-    const botStreamHandler = new NodejsFunction(this, 'BotStreamHandler', {
-      functionName: `${props.name}-${props.environment}-trading-bot-stream`,
+    // Bot Lifecycle Handler (manages SNS subscriptions via EventBridge events)
+    const botLifecycleHandler = new NodejsFunction(this, 'BotLifecycleHandler', {
+      functionName: `${props.name}-${props.environment}-trading-bot-lifecycle`,
       runtime: lambda.Runtime.NODEJS_24_X,
-      entry: path.join(__dirname, '../../src/domains/trading/async/bot-stream-handler.ts'),
+      entry: path.join(__dirname, '../../src/domains/trading/async/bot-lifecycle-handler.ts'),
       handler: 'handler',
       environment: {
         SNS_TOPIC_ARN: indicatorsTopic.topicArn,
@@ -135,18 +142,12 @@ export class DomainTradingStack extends cdk.NestedStack {
       },
     });
 
-    botStreamHandler.addEventSource(new lambdaEventSources.DynamoEventSource(botsTable, {
-      startingPosition: lambda.StartingPosition.TRIM_HORIZON,
-      batchSize: 10,
-      retryAttempts: 3,
-    }));
-
-    indicatorsTopic.grantPublish(botStreamHandler);
-    botStreamHandler.addToRolePolicy(new iam.PolicyStatement({
+    indicatorsTopic.grantPublish(botLifecycleHandler);
+    botLifecycleHandler.addToRolePolicy(new iam.PolicyStatement({
       actions: ['sns:Subscribe', 'sns:Unsubscribe', 'sns:SetSubscriptionAttributes'],
       resources: [indicatorsTopic.topicArn],
     }));
-    botsTable.grant(botStreamHandler, 'dynamodb:UpdateItem');
+    botsTable.grant(botLifecycleHandler, 'dynamodb:UpdateItem');
 
     // ─── EventBridge ──────────────────────────────────────────────
 
@@ -154,6 +155,15 @@ export class DomainTradingStack extends cdk.NestedStack {
       ruleName: `${props.name}-${props.environment}-trading-price-schedule`,
       schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
       targets: [new targets.LambdaFunction(pricePublisherHandler)],
+    });
+
+    new events.Rule(this, 'BotLifecycleRule', {
+      ruleName: `${props.name}-${props.environment}-trading-bot-lifecycle`,
+      eventPattern: {
+        source: ['signalr.trading'],
+        detailType: ['BotCreated', 'BotUpdated', 'BotDeleted'],
+      },
+      targets: [new targets.LambdaFunction(botLifecycleHandler)],
     });
 
     // ─── API Gateway Routes ───────────────────────────────────────

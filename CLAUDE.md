@@ -31,15 +31,15 @@ src/
     └── trading/          # Trading domain — bots, indicators, trade signals
         ├── index.ts      # Lambda entry point + route dispatch
         ├── utils.ts      # jsonResponse helper & RouteHandler type
-        ├── types.ts      # Shared types (BotRecord, TradeRecord, IndicatorSnapshot)
+        ├── types.ts      # Shared types (BotRecord, TradeRecord, IndicatorSnapshot) + EventBridge event types
         ├── indicators.ts # Technical indicator calculations (SMA, EMA, RSI, MACD, BB)
         ├── rule-evaluator.ts  # Recursive rule tree evaluator
         ├── filter-policy.ts   # SNS filter policy generator
-        ├── routes/       # API route handlers (CRUD bots + trades)
+        ├── routes/       # API route handlers (CRUD bots + trades), publish EventBridge events
         └── async/        # Event-driven handlers
-            ├── price-publisher.ts    # EventBridge -> Binance -> SNS
-            ├── bot-executor.ts       # SNS -> rule eval -> trade record
-            └── bot-stream-handler.ts # DynamoDB Streams -> SNS subscriptions
+            ├── price-publisher.ts       # EventBridge schedule -> Binance -> SNS
+            ├── bot-executor.ts          # SNS -> rule eval -> trade record
+            └── bot-lifecycle-handler.ts # EventBridge bot events -> SNS subscriptions
 
 infrastructure/           # AWS CDK v2 project (separate package)
 ├── bin/infrastructure.ts # CDK app entry point
@@ -49,7 +49,7 @@ infrastructure/           # AWS CDK v2 project (separate package)
     ├── domain-portfolio.ts   # Portfolio Lambda + API routes (DomainPortfolioStack)
     ├── domain-orderbook.ts   # Orderbook Lambda + API routes (DomainOrderbookStack)
     ├── domain-core.ts    # Core Lambda + DynamoDB Feedback table + API routes (DomainCoreStack)
-    ├── domain-trading.ts # Trading Lambda (4 functions) + DynamoDB (bots + trades) + SNS + EventBridge (DomainTradingStack)
+    ├── domain-trading.ts # Trading Lambda (4 functions) + DynamoDB (bots + trades) + SNS + EventBridge events (DomainTradingStack)
     ├── auth-page.ts      # S3 + CloudFront for auth page SPA (AuthPageStack)
     ├── webapp.ts         # S3 + CloudFront for authenticated dashboard (WebappStack)
     └── website.ts        # S3 + CloudFront for public marketing site (WebsiteStack)
@@ -87,3 +87,10 @@ Design tokens and global CSS live in `src/shared/styles/` and are shared between
 - See `src/domains/CLAUDE.md` for domain handler patterns, testing, and adding new domains
 - See `src/webapp/CLAUDE.md` for webapp commands
 - See `src/website/CLAUDE.md` for website commands
+
+## Documentation
+
+Documentation for this service will live long term in Notion under the "Signalr (No-code Bot Trading Service)" space. 
+As we work, you need to ensure what we're doing is correct according to the Notion documentation. 
+You are expected to update this documentation as we work also.
+It is expected to keep coding standards and reposoitory specific content in CLAUDE.md files, and technical and business documentation in Notion

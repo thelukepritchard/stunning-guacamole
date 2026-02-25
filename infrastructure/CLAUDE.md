@@ -23,12 +23,14 @@ WebsiteStack   (S3 + CloudFront — public marketing site)
 - **DomainPortfolioStack** (`lib/domain-portfolio.ts`) — `NodejsFunction` bundled from `src/domains/portfolio/index.ts`, integrated at `ANY /portfolio` and `ANY /portfolio/{id}`, Cognito-protected.
 - **DomainOrderbookStack** (`lib/domain-orderbook.ts`) — `NodejsFunction` bundled from `src/domains/orderbook/index.ts`, integrated at `ANY /orderbook` and `ANY /orderbook/{id}`, Cognito-protected.
 - **DomainCoreStack** (`lib/domain-core.ts`) — DynamoDB `Feedback` table + `NodejsFunction` bundled from `src/domains/core/index.ts`, integrated at `POST /core/feedback`, Cognito-protected.
-- **DomainTradingStack** (`lib/domain-trading.ts`) — DynamoDB `Bots` + `Trades` tables, SNS `Indicators` topic, 4 Lambda functions (API handler, price publisher, bot executor, stream handler), EventBridge 1-min schedule, integrated at `/trading/bots`, `/trading/bots/{botId}`, `/trading/trades`, `/trading/trades/{botId}`, Cognito-protected.
+- **DomainTradingStack** (`lib/domain-trading.ts`) — DynamoDB `Bots` + `Trades` tables, SNS `Indicators` topic, 4 Lambda functions (API handler, price publisher, bot executor, lifecycle handler), EventBridge 1-min price schedule + bot lifecycle event routing (`signalr.trading` source), API handler granted `events:PutEvents`, integrated at `/trading/bots`, `/trading/bots/{botId}`, `/trading/trades`, `/trading/trades/{botId}`, Cognito-protected.
 - **AuthPageStack** (`lib/auth-page.ts`) — S3 bucket + CloudFront distribution serving the authentication SPA.
 - **WebappStack** (`lib/webapp.ts`) — S3 bucket + CloudFront distribution serving the authenticated dashboard, with custom domain and Route53 alias.
 - **WebsiteStack** (`lib/website.ts`) — S3 bucket + CloudFront distribution serving the public marketing site, with custom domain and Route53 alias.
 
 All resources follow the naming convention `${name}-${environment}-${description}` (e.g. `techniverse-dev-user-pool`). The `name` (`"techniverse"`) is defined in `bin/infrastructure.ts` and passed to all nested stacks via props.
+
+All domain stacks apply a `Domain` tag (e.g. `Domain: trading`) to all their resources via `cdk.Tags.of(this).add('Domain', '<domain-name>')` at the top of the constructor. This enables filtering and cost attribution by domain in AWS.
 
 ## DNS & Custom Domains
 
@@ -75,9 +77,10 @@ ENV=dev npx cdk diff
 
 1. Create `lib/domain-<name>.ts` using `NodejsFunction` pointing to the handler entry file.
 2. Accept `name`, `api`, and `authorizer` via props; add `ANY` methods on the root resource and any sub-resources (e.g. `{id}`).
-3. Name resources using `${props.name}-${props.environment}-${description}` (e.g. `${props.name}-${props.environment}-<name>-handler`).
-4. Wire the new stack in `bin/infrastructure.ts`, passing `name`, the REST API, and authorizer.
-5. Add a test in `test/infrastructure.test.ts` asserting the Lambda is created.
+3. Add `cdk.Tags.of(this).add('Domain', '<name>')` at the top of the constructor to tag all resources with their domain.
+4. Name resources using `${props.name}-${props.environment}-${description}` (e.g. `${props.name}-${props.environment}-<name>-handler`).
+5. Wire the new stack in `bin/infrastructure.ts`, passing `name`, the REST API, and authorizer.
+6. Add a test in `test/infrastructure.test.ts` asserting the Lambda is created.
 
 ## Adding a New Frontend Stack
 

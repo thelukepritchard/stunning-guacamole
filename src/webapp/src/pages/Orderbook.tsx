@@ -14,12 +14,13 @@ import { useTheme } from '@mui/material/styles';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { bids, asks, depthData, recentFills } from '../data/mockData';
 import { typography } from '@shared/styles/tokens';
+import { formatNumber, formatDollar } from '../utils/format';
 
 /** Orderbook page with buy/sell tables, depth chart, and recent fills. */
 export default function Orderbook() {
   const theme = useTheme();
 
-  const midPrice = ((bids[0]!.price + asks[0]!.price) / 2).toFixed(1);
+  const midPrice = (bids[0]!.price + asks[0]!.price) / 2;
 
   return (
     <Box>
@@ -32,7 +33,7 @@ export default function Orderbook() {
             color="text.secondary"
             sx={{ fontFamily: typography.fontFamily.mono }}
           >
-            ${Number(midPrice).toLocaleString()}
+            {formatDollar(midPrice, 1)}
           </Typography>
         </Box>
         <Typography variant="body2" color="text.secondary">
@@ -62,13 +63,13 @@ export default function Orderbook() {
                   {bids.map((entry, i) => (
                     <TableRow key={i}>
                       <TableCell sx={{ color: 'success.main', fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        {entry.price.toLocaleString(undefined, { minimumFractionDigits: 1 })}
+                        {formatNumber(entry.price, 1)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        {entry.amount.toFixed(3)}
+                        {formatNumber(entry.amount, 3)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        ${entry.total.toLocaleString()}
+                        {formatDollar(entry.total)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -98,13 +99,13 @@ export default function Orderbook() {
                   {asks.map((entry, i) => (
                     <TableRow key={i}>
                       <TableCell sx={{ color: 'error.main', fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        {entry.price.toLocaleString(undefined, { minimumFractionDigits: 1 })}
+                        {formatNumber(entry.price, 1)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        {entry.amount.toFixed(3)}
+                        {formatNumber(entry.amount, 3)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                        ${entry.total.toLocaleString()}
+                        {formatDollar(entry.total)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -128,7 +129,7 @@ export default function Orderbook() {
                 {
                   data: depthData.map((d) => d.price),
                   scaleType: 'linear',
-                  valueFormatter: (v: number) => v.toLocaleString(),
+                  valueFormatter: (v: number) => formatNumber(v, 0),
                 },
               ]}
               series={[
@@ -182,10 +183,10 @@ export default function Orderbook() {
                 <TableRow key={i}>
                   <TableCell sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>{fill.time}</TableCell>
                   <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                    {fill.price.toLocaleString(undefined, { minimumFractionDigits: 1 })}
+                    {formatNumber(fill.price, 1)}
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
-                    {fill.amount.toFixed(3)}
+                    {formatNumber(fill.amount, 3)}
                   </TableCell>
                   <TableCell>
                     <Chip
