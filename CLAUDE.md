@@ -31,15 +31,16 @@ src/
     └── trading/          # Trading domain — bots, indicators, trade signals
         ├── index.ts      # Lambda entry point + route dispatch
         ├── utils.ts      # jsonResponse helper & RouteHandler type
-        ├── types.ts      # Shared types (BotRecord, TradeRecord, IndicatorSnapshot) + EventBridge event types
+        ├── types.ts      # Shared types (BotRecord, TradeRecord, PriceHistoryRecord, BotPerformanceRecord, IndicatorSnapshot) + EventBridge event types
         ├── indicators.ts # Technical indicator calculations (SMA, EMA, RSI, MACD, BB)
         ├── rule-evaluator.ts  # Recursive rule tree evaluator
         ├── filter-policy.ts   # SNS filter policy generator
-        ├── routes/       # API route handlers (CRUD bots + trades), publish EventBridge events
+        ├── routes/       # API route handlers (CRUD bots + trades + price history + bot performance), publish EventBridge events
         └── async/        # Event-driven handlers
-            ├── price-publisher.ts       # EventBridge schedule -> Binance -> SNS
-            ├── bot-executor.ts          # SNS -> rule eval -> trade record
-            └── bot-lifecycle-handler.ts # EventBridge bot events -> SNS subscriptions
+            ├── price-publisher.ts         # EventBridge schedule -> Binance -> SNS + price history DynamoDB
+            ├── bot-executor.ts            # SNS -> rule eval -> trade record
+            ├── bot-lifecycle-handler.ts   # EventBridge bot events -> SNS subscriptions
+            └── bot-performance-recorder.ts # EventBridge 5-min schedule -> P&L snapshots
 
 infrastructure/           # AWS CDK v2 project (separate package)
 ├── bin/infrastructure.ts # CDK app entry point
@@ -49,7 +50,7 @@ infrastructure/           # AWS CDK v2 project (separate package)
     ├── domain-portfolio.ts   # Portfolio Lambda + API routes (DomainPortfolioStack)
     ├── domain-orderbook.ts   # Orderbook Lambda + API routes (DomainOrderbookStack)
     ├── domain-core.ts    # Core Lambda + DynamoDB Feedback table + API routes (DomainCoreStack)
-    ├── domain-trading.ts # Trading Lambda (4 functions) + DynamoDB (bots + trades) + SNS + EventBridge events (DomainTradingStack)
+    ├── domain-trading.ts # Trading Lambda (5 functions) + DynamoDB (bots + trades + price-history + bot-performance) + SNS + EventBridge events (DomainTradingStack)
     ├── auth-page.ts      # S3 + CloudFront for auth page SPA (AuthPageStack)
     ├── webapp.ts         # S3 + CloudFront for authenticated dashboard (WebappStack)
     └── website.ts        # S3 + CloudFront for public marketing site (WebsiteStack)

@@ -25,11 +25,11 @@ export interface DomainTradingStackProps extends cdk.NestedStackProps {
 /**
  * Trading domain stack.
  *
- * Creates DynamoDB tables (bots + trades), an SNS topic for indicator
- * distribution, four Lambda functions (API handler, price publisher,
- * bot executor, lifecycle handler), EventBridge scheduling and bot
- * lifecycle event routing, and wires Cognito-protected API routes
- * under `/trading`.
+ * Creates DynamoDB tables (bots, trades, price history, bot performance),
+ * an SNS topic for indicator distribution, five Lambda functions (API handler,
+ * price publisher, bot executor, lifecycle handler, performance recorder),
+ * EventBridge scheduling and bot lifecycle event routing, and wires
+ * Cognito-protected API routes under `/trading`.
  */
 export class DomainTradingStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: DomainTradingStackProps) {
@@ -64,6 +64,31 @@ export class DomainTradingStack extends cdk.NestedStack {
       sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
     });
 
+    // Price History table — stores per-minute price data per pair
+    const priceHistoryTable = new dynamodb.Table(this, 'PriceHistoryTable', {
+      tableName: `${props.name}-${props.environment}-trading-price-history`,
+      partitionKey: { name: 'pair', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      timeToLiveAttribute: 'ttl',
+    });
+
+    // Bot Performance table — stores P&L snapshots per bot over time
+    const botPerformanceTable = new dynamodb.Table(this, 'BotPerformanceTable', {
+      tableName: `${props.name}-${props.environment}-trading-bot-performance`,
+      partitionKey: { name: 'botId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      timeToLiveAttribute: 'ttl',
+    });
+
+    // GSI for future portfolio-level queries — get all performance snapshots for a user
+    botPerformanceTable.addGlobalSecondaryIndex({
+      indexName: 'sub-index',
+      partitionKey: { name: 'sub', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+    });
+
     // ─── SNS Topic ────────────────────────────────────────────────
 
     const indicatorsTopic = new sns.Topic(this, 'IndicatorsTopic', {
@@ -81,11 +106,15 @@ export class DomainTradingStack extends cdk.NestedStack {
       environment: {
         BOTS_TABLE_NAME: botsTable.tableName,
         TRADES_TABLE_NAME: tradesTable.tableName,
+        PRICE_HISTORY_TABLE_NAME: priceHistoryTable.tableName,
+        BOT_PERFORMANCE_TABLE_NAME: botPerformanceTable.tableName,
       },
     });
 
     botsTable.grantReadWriteData(tradingApiHandler);
     tradesTable.grantReadWriteData(tradingApiHandler);
+    priceHistoryTable.grantReadData(tradingApiHandler);
+    botPerformanceTable.grantReadData(tradingApiHandler);
 
     // Grant the API handler permission to publish EventBridge events
     tradingApiHandler.addToRolePolicy(new iam.PolicyStatement({
@@ -102,10 +131,12 @@ export class DomainTradingStack extends cdk.NestedStack {
       timeout: cdk.Duration.seconds(30),
       environment: {
         SNS_TOPIC_ARN: indicatorsTopic.topicArn,
+        PRICE_HISTORY_TABLE_NAME: priceHistoryTable.tableName,
       },
     });
 
     indicatorsTopic.grantPublish(pricePublisherHandler);
+    priceHistoryTable.grantWriteData(pricePublisherHandler);
 
     // Bot Executor handler
     const botExecutorHandler = new NodejsFunction(this, 'BotExecutorHandler', {
@@ -166,6 +197,32 @@ export class DomainTradingStack extends cdk.NestedStack {
       targets: [new targets.LambdaFunction(botLifecycleHandler)],
     });
 
+    // Bot Performance Recorder handler
+    const botPerformanceRecorderHandler = new NodejsFunction(this, 'BotPerformanceRecorderHandler', {
+      functionName: `${props.name}-${props.environment}-trading-bot-perf-recorder`,
+      runtime: lambda.Runtime.NODEJS_24_X,
+      entry: path.join(__dirname, '../../src/domains/trading/async/bot-performance-recorder.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(60),
+      environment: {
+        BOTS_TABLE_NAME: botsTable.tableName,
+        TRADES_TABLE_NAME: tradesTable.tableName,
+        BOT_PERFORMANCE_TABLE_NAME: botPerformanceTable.tableName,
+        PRICE_HISTORY_TABLE_NAME: priceHistoryTable.tableName,
+      },
+    });
+
+    botsTable.grantReadData(botPerformanceRecorderHandler);
+    tradesTable.grantReadData(botPerformanceRecorderHandler);
+    botPerformanceTable.grantWriteData(botPerformanceRecorderHandler);
+    priceHistoryTable.grantReadData(botPerformanceRecorderHandler);
+
+    new events.Rule(this, 'BotPerformanceRecorderSchedule', {
+      ruleName: `${props.name}-${props.environment}-trading-perf-recorder-schedule`,
+      schedule: events.Schedule.rate(cdk.Duration.minutes(5)),
+      targets: [new targets.LambdaFunction(botPerformanceRecorderHandler)],
+    });
+
     // ─── API Gateway Routes ───────────────────────────────────────
 
     const integration = new apigateway.LambdaIntegration(tradingApiHandler);
@@ -212,5 +269,18 @@ export class DomainTradingStack extends cdk.NestedStack {
     tradeBotIdResource.addCorsPreflight(corsOptions);
     // GET /trading/trades/{botId} — list trades for a bot
     tradeBotIdResource.addMethod('GET', integration, methodOptions);
+
+    // /trading/prices/{pair}
+    const pricesResource = tradingResource.addResource('prices');
+    const pricePairResource = pricesResource.addResource('{pair}');
+    pricePairResource.addCorsPreflight(corsOptions);
+    // GET /trading/prices/{pair} — price history for a pair
+    pricePairResource.addMethod('GET', integration, methodOptions);
+
+    // /trading/bots/{botId}/performance
+    const botPerformanceResource = botIdResource.addResource('performance');
+    botPerformanceResource.addCorsPreflight(corsOptions);
+    // GET /trading/bots/{botId}/performance — bot P&L time series
+    botPerformanceResource.addMethod('GET', integration, methodOptions);
   }
 }

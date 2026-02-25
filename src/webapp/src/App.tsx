@@ -11,6 +11,7 @@ import Portfolios from './pages/Portfolios';
 import Orderbook from './pages/Orderbook';
 import Bots from './pages/Bots';
 import BotDetail from './pages/BotDetail';
+import BotView from './pages/BotView';
 import Settings from './pages/Settings';
 import ReleaseNotes from './pages/ReleaseNotes';
 
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="orderbook" element={<Orderbook />} />
             <Route path="bots" element={<Bots />} />
             <Route path="bots/:pair" element={<BotDetail />} />
+            <Route path="bots/view/:botId" element={<BotView />} />
             <Route path="settings" element={<Settings />} />
             <Route path="release-notes" element={<ReleaseNotes />} />
           </Route>

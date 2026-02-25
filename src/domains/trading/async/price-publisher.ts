@@ -1,9 +1,15 @@
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { calculateAllIndicators, type KlineData, type Ticker24h } from '../indicators';
 import { NUMERIC_INDICATOR_FIELDS, STRING_INDICATOR_FIELDS } from '../types';
-import type { IndicatorSnapshot } from '../types';
+import type { IndicatorSnapshot, PriceHistoryRecord } from '../types';
 
 const sns = new SNSClient({});
+const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+
+/** 30 days in seconds — TTL offset for price history records. */
+const PRICE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const SYMBOL = 'BTCUSDT';
 const PAIR = 'BTC/USDT';
@@ -50,11 +56,28 @@ export async function handler(): Promise<void> {
     };
   }
 
-  await sns.send(new PublishCommand({
-    TopicArn: process.env.SNS_TOPIC_ARN!,
-    Message: JSON.stringify(indicators),
-    MessageAttributes: messageAttributes,
-  }));
+  const now = new Date();
+  const priceRecord: PriceHistoryRecord = {
+    pair: PAIR,
+    timestamp: now.toISOString(),
+    price: indicators.price,
+    volume_24h: indicators.volume_24h,
+    price_change_pct: indicators.price_change_pct,
+    indicators,
+    ttl: Math.floor(now.getTime() / 1000) + PRICE_TTL_SECONDS,
+  };
 
-  console.log('Published indicators:', { pair: PAIR, price: indicators.price });
+  await Promise.all([
+    ddbDoc.send(new PutCommand({
+      TableName: process.env.PRICE_HISTORY_TABLE_NAME!,
+      Item: priceRecord,
+    })),
+    sns.send(new PublishCommand({
+      TopicArn: process.env.SNS_TOPIC_ARN!,
+      Message: JSON.stringify(indicators),
+      MessageAttributes: messageAttributes,
+    })),
+  ]);
+
+  console.log('Published indicators and stored price history:', { pair: PAIR, price: indicators.price });
 }

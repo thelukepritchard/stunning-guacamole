@@ -20,6 +20,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddIcon from '@mui/icons-material/Add';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
+import BarChartIcon from '@mui/icons-material/BarChart';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { QueryBuilder, type RuleGroupType } from 'react-querybuilder';
 import { QueryBuilderMaterial } from '@react-querybuilder/material';
@@ -521,6 +522,16 @@ export default function Bots() {
                         {countBotRules(bot)} rule{countBotRules(bot) !== 1 ? 's' : ''}
                       </Typography>
                       <Stack direction="row" spacing={0.5}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/bots/view/${bot.botId}`);
+                          }}
+                          title="View Performance"
+                        >
+                          <BarChartIcon fontSize="small" />
+                        </IconButton>
                         <IconButton
                           size="small"
                           onClick={(e) => handleToggleStatus(bot, e)}

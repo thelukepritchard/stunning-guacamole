@@ -103,6 +103,43 @@ export const STRING_INDICATOR_FIELDS = [
   'bb_position',
 ] as const;
 
+// ─── Price History Types ────────────────────────────────────────
+
+/** DynamoDB price history item — one record per minute per pair. */
+export interface PriceHistoryRecord {
+  pair: string;
+  timestamp: string;
+  price: number;
+  volume_24h: number;
+  price_change_pct: number;
+  indicators: IndicatorSnapshot;
+  /** Epoch seconds for DynamoDB TTL (auto-expire after 30 days). */
+  ttl: number;
+}
+
+// ─── Bot Performance Types ──────────────────────────────────────
+
+/** DynamoDB bot performance snapshot — one record per 5-minute interval per bot. */
+export interface BotPerformanceRecord {
+  botId: string;
+  timestamp: string;
+  sub: string;
+  pair: string;
+  currentPrice: number;
+  totalBuys: number;
+  totalSells: number;
+  totalBuyValue: number;
+  totalSellValue: number;
+  realisedPnl: number;
+  unrealisedPnl: number;
+  netPnl: number;
+  netPosition: number;
+  /** Percentage of sells where sell price exceeded average buy cost (0–100). */
+  winRate: number;
+  /** Epoch seconds for DynamoDB TTL (auto-expire after 90 days). */
+  ttl: number;
+}
+
 // ─── EventBridge Event Types ────────────────────────────────────
 
 /** EventBridge event source for the trading domain. */

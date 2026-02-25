@@ -11,16 +11,18 @@ const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const eventBridge = new EventBridgeClient({});
 
 /**
- * Deletes all trade records for a given bot in batches of 25.
+ * Deletes all items from a table matching the given botId in batches of 25.
+ * Works for any table with partition key `botId` and sort key `timestamp`.
  *
- * @param botId - The bot ID whose trades should be deleted.
+ * @param tableName - The DynamoDB table name.
+ * @param botId - The bot ID whose records should be deleted.
  */
-async function deleteBotTrades(botId: string): Promise<void> {
+async function deleteBotRecords(tableName: string, botId: string): Promise<void> {
   let lastEvaluatedKey: Record<string, unknown> | undefined;
 
   do {
     const result = await ddbDoc.send(new QueryCommand({
-      TableName: process.env.TRADES_TABLE_NAME!,
+      TableName: tableName,
       KeyConditionExpression: 'botId = :botId',
       ExpressionAttributeValues: { ':botId': botId },
       ProjectionExpression: 'botId, #ts',
@@ -36,7 +38,7 @@ async function deleteBotTrades(botId: string): Promise<void> {
       const batch = items.slice(i, i + 25);
       await ddbDoc.send(new BatchWriteCommand({
         RequestItems: {
-          [process.env.TRADES_TABLE_NAME!]: batch.map((item) => ({
+          [tableName]: batch.map((item) => ({
             DeleteRequest: {
               Key: { botId: item.botId, timestamp: item.timestamp },
             },
@@ -49,7 +51,7 @@ async function deleteBotTrades(botId: string): Promise<void> {
 
 /**
  * Deletes a bot by ID for the authenticated user,
- * along with all associated trade records.
+ * along with all associated trade and performance records.
  *
  * Fetches the bot before deletion to capture the subscriptionArn
  * for the BotDeleted event, enabling the lifecycle handler to
@@ -77,7 +79,10 @@ export async function deleteBot(event: APIGatewayProxyEvent): Promise<APIGateway
     Key: { sub, botId },
   }));
 
-  await deleteBotTrades(botId);
+  await Promise.all([
+    deleteBotRecords(process.env.TRADES_TABLE_NAME!, botId),
+    deleteBotRecords(process.env.BOT_PERFORMANCE_TABLE_NAME!, botId),
+  ]);
 
   // Publish BotDeleted event only if the bot existed
   if (bot) {
