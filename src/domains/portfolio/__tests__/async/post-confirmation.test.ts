@@ -180,7 +180,7 @@ describe('post-confirmation handler', () => {
     expect(botParams.TableName).toBe('BotsTable');
     expect(botParams.Item.sub).toBe('user-bot-test');
     expect(botParams.Item.name).toBe('RSI Dip Buyer');
-    expect(botParams.Item.pair).toBe('BTCUSDT');
+    expect(botParams.Item.pair).toBe('BTC/USDT');
     expect(botParams.Item.status).toBe('draft');
     expect(botParams.Item.executionMode).toBe('once_and_wait');
     expect(typeof botParams.Item.botId).toBe('string');

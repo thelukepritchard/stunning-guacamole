@@ -32,6 +32,7 @@ import { updateBot } from '../routes/update-bot';
 import { deleteBot } from '../routes/delete-bot';
 import { listTrades } from '../routes/list-trades';
 import { listBotTrades } from '../routes/list-bot-trades';
+import { getPriceHistory } from '../routes/get-price-history';
 
 /**
  * Builds a mock API Gateway proxy event for route handler tests.
@@ -71,6 +72,7 @@ describe('trading route handlers', () => {
     process.env.BOT_PERFORMANCE_TABLE_NAME = 'BotPerformanceTable';
     process.env.BACKTESTS_TABLE_NAME = 'BacktestsTable';
     process.env.BACKTEST_REPORTS_BUCKET = 'backtest-reports-bucket';
+    process.env.PRICE_HISTORY_TABLE_NAME = 'PriceHistoryTable';
   });
 
   /**
@@ -1108,6 +1110,252 @@ describe('trading route handlers', () => {
 
       expect(result.statusCode).toBe(401);
       expect(body.error).toBe('Unauthorized');
+    });
+  });
+
+  /**
+   * Tests for the getPriceHistory route handler, including the normalizePair
+   * helper that converts dash-separated and no-separator pair formats to the
+   * canonical BASE/QUOTE format used as the DynamoDB partition key.
+   */
+  describe('getPriceHistory', () => {
+    /** Happy path — dash-separated pair (BTC-USDT) is normalised to BTC/USDT. */
+    it('returns 200 with price history items for a dash-separated pair', async () => {
+      const mockItems = [
+        { pair: 'BTC/USDT', timestamp: '2025-01-01T00:00:00.000Z', close: 50000 },
+        { pair: 'BTC/USDT', timestamp: '2025-01-01T01:00:00.000Z', close: 51000 },
+      ];
+      mockSend.mockResolvedValueOnce({ Items: mockItems });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BTC-USDT' },
+        queryStringParameters: { period: '24h' },
+      });
+
+      const result = await getPriceHistory(event);
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.items).toEqual(mockItems);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    /** Normalisation — slash-separated pair (BTC/USDT) is passed through unchanged. */
+    it('accepts a slash-separated pair without transformation', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BTC/USDT' },
+        queryStringParameters: { period: '1h' },
+      });
+
+      await getPriceHistory(event);
+
+      const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+      expect(QueryCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ExpressionAttributeValues: expect.objectContaining({ ':pair': 'BTC/USDT' }),
+        }),
+      );
+    });
+
+    /** Normalisation — no-separator Binance-style symbol (BTCUSDT) is split into BTC/USDT. */
+    it('normalises a no-separator Binance-style pair (BTCUSDT) to BTC/USDT', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BTCUSDT' },
+        queryStringParameters: { period: '1h' },
+      });
+
+      await getPriceHistory(event);
+
+      const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+      expect(QueryCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ExpressionAttributeValues: expect.objectContaining({ ':pair': 'BTC/USDT' }),
+        }),
+      );
+    });
+
+    /** Normalisation — ETHUSDT is split into ETH/USDT. */
+    it('normalises ETHUSDT to ETH/USDT', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'ETHUSDT' },
+        queryStringParameters: { period: '6h' },
+      });
+
+      await getPriceHistory(event);
+
+      const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+      expect(QueryCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ExpressionAttributeValues: expect.objectContaining({ ':pair': 'ETH/USDT' }),
+        }),
+      );
+    });
+
+    /** Normalisation — BNBBTC (quote is BTC) is split into BNB/BTC. */
+    it('normalises BNBBTC to BNB/BTC using the BTC known-quote entry', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BNBBTC' },
+        queryStringParameters: { period: '1h' },
+      });
+
+      await getPriceHistory(event);
+
+      const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+      expect(QueryCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ExpressionAttributeValues: expect.objectContaining({ ':pair': 'BNB/BTC' }),
+        }),
+      );
+    });
+
+    /** Normalisation — dash-separated pair (ETH-USDT) is normalised to ETH/USDT. */
+    it('normalises a dash-separated pair (ETH-USDT) to ETH/USDT', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'ETH-USDT' },
+        queryStringParameters: { period: '7d' },
+      });
+
+      await getPriceHistory(event);
+
+      const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+      expect(QueryCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ExpressionAttributeValues: expect.objectContaining({ ':pair': 'ETH/USDT' }),
+        }),
+      );
+    });
+
+    /** Default period — omitting the period query param uses '24h'. */
+    it('defaults to 24h period when period query parameter is absent', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BTC-USDT' },
+        queryStringParameters: null,
+      });
+
+      const result = await getPriceHistory(event);
+
+      expect(result.statusCode).toBe(200);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    /** DynamoDB query uses the correct table, key expression, and ScanIndexForward. */
+    it('queries DynamoDB with the correct key expression and scan direction', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BTC-USDT' },
+        queryStringParameters: { period: '1h' },
+      });
+
+      await getPriceHistory(event);
+
+      const { QueryCommand } = require('@aws-sdk/lib-dynamodb');
+      expect(QueryCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          TableName: 'PriceHistoryTable',
+          KeyConditionExpression: '#pair = :pair AND #ts >= :since',
+          ExpressionAttributeNames: { '#pair': 'pair', '#ts': 'timestamp' },
+          ScanIndexForward: true,
+        }),
+      );
+    });
+
+    /** Empty result — DynamoDB returning undefined Items is coerced to an empty array. */
+    it('returns an empty items array when DynamoDB returns undefined Items', async () => {
+      mockSend.mockResolvedValueOnce({ Items: undefined });
+
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BTC-USDT' },
+        queryStringParameters: { period: '1h' },
+      });
+
+      const result = await getPriceHistory(event);
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.items).toEqual([]);
+    });
+
+    /** Validation — missing pair path parameter returns 400. */
+    it('returns 400 when pair path parameter is missing', async () => {
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: null,
+      });
+
+      const result = await getPriceHistory(event);
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(400);
+      expect(body.error).toBe('Missing pair');
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    /** Validation — unknown period value returns 400. */
+    it('returns 400 for an unrecognised period value', async () => {
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BTC-USDT' },
+        queryStringParameters: { period: '2w' },
+      });
+
+      const result = await getPriceHistory(event);
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(400);
+      expect(body.error).toBe('Invalid period: 2w');
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    /** Auth — missing sub returns 401. */
+    it('returns 401 when sub is not present', async () => {
+      const event = buildRouteEvent({
+        httpMethod: 'GET',
+        resource: '/trading/price-history/{pair}',
+        pathParameters: { pair: 'BTC-USDT' },
+        requestContext: {
+          authorizer: { claims: {} },
+        } as unknown as APIGatewayProxyEvent['requestContext'],
+      });
+
+      const result = await getPriceHistory(event);
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(401);
+      expect(body.error).toBe('Unauthorized');
+      expect(mockSend).not.toHaveBeenCalled();
     });
   });
 });

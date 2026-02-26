@@ -6,6 +6,7 @@ See `patterns.md` for detailed testing patterns.
 
 ### Quick Reference
 - **Test command**: `cd src/domains && npm test -- --no-coverage` (runs all domain tests; `npm test` script simply calls `jest` with no extra flags so both `npm test` and `npx jest` work fine)
+- **Filter by path**: use `--testPathPatterns="<pattern>"` (NOT `--testPathPattern` — that was renamed in Jest 30 and will error)
 - **Test framework**: Jest (configured at `src/domains/jest.config.js`)
 - **Test file pattern**: `<domain>/__tests__/*.test.ts` and `<domain>/__tests__/async/*.test.ts`
 - **Shared test utility**: `src/domains/test-utils.ts` — `buildEvent()` has empty `requestContext: {}` (NO sub/authorizer by default)
@@ -42,3 +43,4 @@ See `patterns.md` for detailed testing patterns.
 - `portfolio/__tests__/handler.test.ts` — Added `GET /portfolio/leaderboard/{username}` dispatch test (mockGetTraderProfile mock + route assertion).
 - `core/__tests__/routes.test.ts` — Complete rewrite: added `deleteAccount` describe block (19 tests) covering 401 auth checks, single-key DeleteCommands, composite-key QueryCommand+BatchWrite, GSI QueryCommand+BatchWrite, S3 listing+delete, pagination for composite/GSI/S3, Cognito disable+delete+ordering, DDB/Cognito error propagation. Also updated `submitFeedback` tests to use `jest.requireMock` constructor introspection and `resetAllMocks`.
 - `core/__tests__/handler.test.ts` — Added mock for `deleteAccount` route + routing test for `DELETE /core/account`.
+- `trading/__tests__/routes.test.ts` — Added `getPriceHistory` describe block (12 tests) covering: 200 with items, slash/dash/no-separator normalization (BTC/USDT, BTC-USDT, BTCUSDT, ETHUSDT, BNBBTC, ETH-USDT), default 24h period, DDB QueryCommand key expression + ScanIndexForward assertion, undefined Items coercion to [], 400 on missing pair, 400 on invalid period, 401 on missing sub. Uses inline `require('@aws-sdk/lib-dynamodb')` + `expect(QueryCommand).toHaveBeenCalledWith(expect.objectContaining(...))` pattern.

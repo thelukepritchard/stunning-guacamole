@@ -10,7 +10,7 @@ const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * Creates a default "RSI Dip Buyer" bot in draft mode for a new user.
  *
  * The bot uses RSI(7) < 40 as the buy signal and RSI(7) > 60 as the
- * sell signal on the BTCUSDT pair, giving new users a ready-to-review
+ * sell signal on the BTC/USDT pair, giving new users a ready-to-review
  * starter strategy.
  *
  * @param sub - The Cognito user ID.
@@ -24,7 +24,7 @@ async function createDefaultBot(sub: string): Promise<void> {
       sub,
       botId: randomUUID(),
       name: 'RSI Dip Buyer',
-      pair: 'BTCUSDT',
+      pair: 'BTC/USDT',
       status: 'draft',
       executionMode: 'once_and_wait',
       buyQuery: {

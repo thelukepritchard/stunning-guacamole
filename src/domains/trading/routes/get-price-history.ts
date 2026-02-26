@@ -14,6 +14,35 @@ const PERIOD_HOURS: Record<string, number> = {
   '30d': 720,
 };
 
+/** Known quote currencies for pair normalization (longest first to avoid prefix collisions). */
+const KNOWN_QUOTES = ['FDUSD', 'USDT', 'USDC', 'USD', 'AUD', 'EUR', 'BTC', 'ETH', 'BNB'];
+
+/**
+ * Normalises a pair parameter into the canonical `BASE/QUOTE` format
+ * used in the price history table.
+ *
+ * Handles three input formats:
+ * - `BTC/USDT` — already canonical
+ * - `BTC-USDT` — dash separator (URL-safe encoding from the frontend)
+ * - `BTCUSDT`  — no separator (Binance-style symbol)
+ *
+ * @param raw - The raw pair string from the URL path parameter.
+ * @returns The normalised pair string (e.g. `BTC/USDT`).
+ */
+function normalizePair(raw: string): string {
+  if (raw.includes('/')) return raw;
+  if (raw.includes('-')) return raw.replace('-', '/');
+
+  const upper = raw.toUpperCase();
+  for (const quote of KNOWN_QUOTES) {
+    if (upper.endsWith(quote) && upper.length > quote.length) {
+      return `${upper.slice(0, -quote.length)}/${quote}`;
+    }
+  }
+
+  return raw;
+}
+
 /**
  * Returns price history for a trading pair within a time period.
  *
@@ -32,8 +61,8 @@ export async function getPriceHistory(
   const pairParam = event.pathParameters?.pair;
   if (!pairParam) return jsonResponse(400, { error: 'Missing pair' });
 
-  // Convert URL param (BTC-USDT) to DynamoDB key (BTC/USDT)
-  const pair = pairParam.replace('-', '/');
+  // Normalise URL param (BTC-USDT, BTCUSDT) to DynamoDB key (BTC/USDT)
+  const pair = normalizePair(pairParam);
 
   const period = event.queryStringParameters?.period ?? '24h';
   const hours = PERIOD_HOURS[period];
