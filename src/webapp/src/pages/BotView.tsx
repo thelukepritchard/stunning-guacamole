@@ -6,6 +6,7 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
+import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid2';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
@@ -389,6 +390,7 @@ export default function BotView() {
       </Card>
 
       {/* Trade History */}
+      <Divider sx={{ my: 3 }} />
       <Typography variant="h6" sx={{ mb: 2 }}>
         Trade History
       </Typography>

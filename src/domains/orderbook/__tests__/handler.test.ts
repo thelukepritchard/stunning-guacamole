@@ -1,61 +1,101 @@
+const mockFetch = jest.fn();
+global.fetch = mockFetch as unknown as typeof fetch;
+
 import { handler } from '../index';
 import { buildEvent } from '../../test-utils';
 
+beforeEach(() => {
+  jest.resetAllMocks();
+  process.env.DEMO_EXCHANGE_API_URL = 'https://demo-api.example.com/';
+});
+
+/**
+ * Builds a mock event with Cognito authorizer claims.
+ */
+function buildAuthEvent(overrides: Partial<Parameters<typeof buildEvent>[0]> = {}) {
+  return buildEvent({
+    ...overrides,
+    requestContext: {
+      authorizer: { claims: { sub: 'user-123' } },
+    } as never,
+  });
+}
+
 describe('orderbook handler', () => {
-  it('routes GET /orderbook to listOrders', async () => {
-    const result = await handler(buildEvent({ httpMethod: 'GET', resource: '/orderbook' }));
+  /** Verifies GET /orderbook/balance routes to getBalance. */
+  it('routes GET /orderbook/balance to getBalance', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ sub: 'user-123', usd: 1000, btc: 0 }),
+    });
 
-    expect(result.statusCode).toBe(200);
-    expect(JSON.parse(result.body).items).toHaveLength(2);
-  });
-
-  it('routes POST /orderbook to placeOrder', async () => {
-    const result = await handler(buildEvent({
-      httpMethod: 'POST',
-      resource: '/orderbook',
-      body: JSON.stringify({ symbol: 'GOOG', side: 'buy', quantity: 5 }),
-    }));
-
-    expect(result.statusCode).toBe(201);
-    expect(JSON.parse(result.body).symbol).toBe('GOOG');
-  });
-
-  it('routes GET /orderbook/{id} to getOrder', async () => {
-    const result = await handler(buildEvent({
+    const result = await handler(buildAuthEvent({
       httpMethod: 'GET',
-      resource: '/orderbook/{id}',
-      pathParameters: { id: 'o-001' },
+      resource: '/orderbook/balance',
     }));
 
     expect(result.statusCode).toBe(200);
-    expect(JSON.parse(result.body).id).toBe('o-001');
+    expect(JSON.parse(result.body).exchange).toBe('demo');
   });
 
-  it('routes PUT /orderbook/{id} to updateOrder', async () => {
-    const result = await handler(buildEvent({
-      httpMethod: 'PUT',
-      resource: '/orderbook/{id}',
-      pathParameters: { id: 'o-001' },
-      body: JSON.stringify({ status: 'filled' }),
+  /** Verifies GET /orderbook/pairs routes to getPairs. */
+  it('routes GET /orderbook/pairs to getPairs', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ pairs: [{ symbol: 'BTC/USD', base: 'BTC', quote: 'USD' }] }),
+    });
+
+    const result = await handler(buildAuthEvent({
+      httpMethod: 'GET',
+      resource: '/orderbook/pairs',
     }));
 
     expect(result.statusCode).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ id: 'o-001', status: 'filled' });
+    expect(JSON.parse(result.body).pairs).toHaveLength(1);
   });
 
-  it('routes DELETE /orderbook/{id} to cancelOrder', async () => {
-    const result = await handler(buildEvent({
+  /** Verifies GET /orderbook/orders routes to listOrders. */
+  it('routes GET /orderbook/orders to listOrders', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ orders: [] }),
+    });
+
+    const result = await handler(buildAuthEvent({
+      httpMethod: 'GET',
+      resource: '/orderbook/orders',
+    }));
+
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body).orders).toEqual([]);
+  });
+
+  /** Verifies DELETE /orderbook/orders/{orderId} routes to cancelOrder. */
+  it('routes DELETE /orderbook/orders/{orderId} to cancelOrder', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ message: 'Order cancelled', orderId: 'o1' }),
+    });
+
+    const result = await handler(buildAuthEvent({
       httpMethod: 'DELETE',
-      resource: '/orderbook/{id}',
-      pathParameters: { id: 'o-001' },
+      resource: '/orderbook/orders/{orderId}',
+      pathParameters: { orderId: 'o1' },
     }));
 
     expect(result.statusCode).toBe(200);
-    expect(JSON.parse(result.body)).toEqual({ id: 'o-001', status: 'cancelled' });
   });
 
+  /** Verifies unknown routes return 404. */
   it('returns 404 for unknown routes', async () => {
-    const result = await handler(buildEvent({ httpMethod: 'PATCH', resource: '/orderbook' }));
+    const result = await handler(buildAuthEvent({
+      httpMethod: 'PATCH',
+      resource: '/orderbook/balance',
+    }));
 
     expect(result.statusCode).toBe(404);
     expect(JSON.parse(result.body)).toEqual({ error: 'Route not found' });

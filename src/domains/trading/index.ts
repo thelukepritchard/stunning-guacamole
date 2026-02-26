@@ -11,6 +11,10 @@ import { getBotPerformance } from './routes/get-bot-performance';
 import { getSettings } from './routes/get-settings';
 import { updateSettings } from './routes/update-settings';
 import { getExchangeOptions } from './routes/get-exchange-options';
+import { submitBacktest } from './routes/submit-backtest';
+import { listBacktests } from './routes/list-backtests';
+import { getLatestBacktest } from './routes/get-latest-backtest';
+import { getBacktest } from './routes/get-backtest';
 
 /**
  * Lambda entry-point for the trading domain. Routes the incoming API Gateway
@@ -35,6 +39,10 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     case 'GET /trading/settings':                 return getSettings(event);
     case 'PUT /trading/settings':                 return updateSettings(event);
     case 'GET /trading/settings/exchange-options': return getExchangeOptions(event);
+    case 'POST /trading/bots/{botId}/backtests':            return submitBacktest(event);
+    case 'GET /trading/bots/{botId}/backtests':             return listBacktests(event);
+    case 'GET /trading/bots/{botId}/backtests/latest':      return getLatestBacktest(event);
+    case 'GET /trading/bots/{botId}/backtests/{backtestId}': return getBacktest(event);
     default:
       return {
         statusCode: 404,

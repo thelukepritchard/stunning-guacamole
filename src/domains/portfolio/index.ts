@@ -6,6 +6,7 @@ import { updatePortfolio } from './routes/update-portfolio';
 import { deletePortfolio } from './routes/delete-portfolio';
 import { getPortfolioPerformance } from './routes/get-portfolio-performance';
 import { getLeaderboard } from './routes/get-leaderboard';
+import { getTraderProfile } from './routes/get-trader-profile';
 
 /**
  * Lambda entry-point. Routes the incoming API Gateway request to the
@@ -25,6 +26,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     case 'DELETE /portfolio/{id}':        return deletePortfolio(event);
     case 'GET /portfolio/performance':    return getPortfolioPerformance(event);
     case 'GET /portfolio/leaderboard':    return getLeaderboard(event);
+    case 'GET /portfolio/leaderboard/{username}': return getTraderProfile(event);
     default:
       return {
         statusCode: 404,

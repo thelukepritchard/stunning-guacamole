@@ -2,6 +2,7 @@ import type { APIGatewayProxyEvent } from 'aws-lambda';
 
 const mockSend = jest.fn();
 const mockEventBridgeSend = jest.fn();
+const mockS3Send = jest.fn();
 
 jest.mock('@aws-sdk/client-dynamodb', () => ({
   DynamoDBClient: jest.fn(() => ({})),
@@ -18,6 +19,10 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
 jest.mock('@aws-sdk/client-eventbridge', () => ({
   EventBridgeClient: jest.fn(() => ({ send: mockEventBridgeSend })),
   PutEventsCommand: jest.fn((params) => ({ ...params, _type: 'PutEvents' })),
+}));
+jest.mock('@aws-sdk/client-s3', () => ({
+  S3Client: jest.fn(() => ({ send: mockS3Send })),
+  DeleteObjectCommand: jest.fn((params) => ({ ...params, _type: 'DeleteObject' })),
 }));
 
 import { createBot } from '../routes/create-bot';
@@ -60,10 +65,12 @@ function buildRouteEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGate
  */
 describe('trading route handlers', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     process.env.BOTS_TABLE_NAME = 'BotsTable';
     process.env.TRADES_TABLE_NAME = 'TradesTable';
     process.env.BOT_PERFORMANCE_TABLE_NAME = 'BotPerformanceTable';
+    process.env.BACKTESTS_TABLE_NAME = 'BacktestsTable';
+    process.env.BACKTEST_REPORTS_BUCKET = 'backtest-reports-bucket';
   });
 
   /**
@@ -662,12 +669,10 @@ describe('trading route handlers', () => {
   describe('deleteBot', () => {
     /** Verifies successful deletion returns 200 and deletes trades. */
     it('returns 200 with deletion confirmation and deletes trades', async () => {
-      const mockBot = { sub: 'user-123', botId: 'bot-001', buySubscriptionArn: 'arn:buy-sub', sellSubscriptionArn: 'arn:sell-sub' };
       const mockTrades = [
         { botId: 'bot-001', timestamp: '2026-01-01T00:00:00Z' },
         { botId: 'bot-001', timestamp: '2026-01-01T00:01:00Z' },
       ];
-      mockSend.mockResolvedValueOnce({ Item: mockBot }); // GetCommand
       mockSend.mockResolvedValueOnce({}); // DeleteCommand
       mockSend.mockResolvedValueOnce({ Items: mockTrades }); // trade query
       mockSend.mockResolvedValueOnce({ Items: [] }); // performance query
@@ -687,10 +692,8 @@ describe('trading route handlers', () => {
       expect(body).toEqual({ botId: 'bot-001', deleted: true });
     });
 
-    /** Verifies a BotDeleted event is published with subscription ARNs. */
+    /** Verifies a BotDeleted event is published. */
     it('publishes a BotDeleted event to EventBridge', async () => {
-      const mockBot = { sub: 'user-123', botId: 'bot-001', buySubscriptionArn: 'arn:buy-sub', sellSubscriptionArn: 'arn:sell-sub' };
-      mockSend.mockResolvedValueOnce({ Item: mockBot }); // GetCommand
       mockSend.mockResolvedValueOnce({}); // DeleteCommand
       mockSend.mockResolvedValueOnce({ Items: [] }); // trade query (empty)
       mockSend.mockResolvedValueOnce({ Items: [] }); // performance query (empty)
@@ -708,14 +711,12 @@ describe('trading route handlers', () => {
       const ebCall = PutEventsCommand.mock.calls[0][0];
       expect(ebCall.Entries[0].DetailType).toBe('BotDeleted');
       const detail = JSON.parse(ebCall.Entries[0].Detail);
-      expect(detail.buySubscriptionArn).toBe('arn:buy-sub');
-      expect(detail.sellSubscriptionArn).toBe('arn:sell-sub');
+      expect(detail.sub).toBe('user-123');
+      expect(detail.botId).toBe('bot-001');
     });
 
     /** Verifies deletion works when bot has no trades. */
     it('handles bot with no trades gracefully', async () => {
-      const mockBot = { sub: 'user-123', botId: 'bot-001' };
-      mockSend.mockResolvedValueOnce({ Item: mockBot }); // GetCommand
       mockSend.mockResolvedValueOnce({}); // DeleteCommand
       mockSend.mockResolvedValueOnce({ Items: [] }); // trade query (empty)
       mockSend.mockResolvedValueOnce({ Items: [] }); // performance query (empty)
@@ -734,12 +735,12 @@ describe('trading route handlers', () => {
       expect(body).toEqual({ botId: 'bot-001', deleted: true });
     });
 
-    /** Verifies no event is published when the bot did not exist. */
-    it('does not publish event when bot did not exist', async () => {
-      mockSend.mockResolvedValueOnce({ Item: undefined }); // GetCommand — not found
+    /** Verifies BotDeleted event is always published after deletion. */
+    it('publishes BotDeleted event after deletion', async () => {
       mockSend.mockResolvedValueOnce({}); // DeleteCommand
       mockSend.mockResolvedValueOnce({ Items: [] }); // trade query
       mockSend.mockResolvedValueOnce({ Items: [] }); // performance query
+      mockEventBridgeSend.mockResolvedValueOnce({}); // EventBridge
 
       const event = buildRouteEvent({
         httpMethod: 'DELETE',
@@ -749,7 +750,7 @@ describe('trading route handlers', () => {
 
       await deleteBot(event);
 
-      expect(mockEventBridgeSend).not.toHaveBeenCalled();
+      expect(mockEventBridgeSend).toHaveBeenCalledTimes(1);
     });
 
     /** Verifies missing sub returns 401. */
@@ -783,6 +784,201 @@ describe('trading route handlers', () => {
 
       expect(result.statusCode).toBe(400);
       expect(body.error).toBe('Missing botId');
+    });
+
+    /** Verifies backtest S3 objects and DynamoDB records are cleaned up on bot deletion. */
+    it('cleans up backtest S3 objects and DDB records when BACKTESTS_TABLE_NAME is set', async () => {
+      const backtests = [
+        { sub: 'user-123', backtestId: 'bt-001', botId: 'bot-001', s3Key: 'backtests/user-123/bot-001/bt-001.json' },
+        { sub: 'user-123', backtestId: 'bt-002', botId: 'bot-001', s3Key: undefined },
+      ];
+      mockSend.mockResolvedValueOnce({}); // DeleteCommand — bot
+      mockSend.mockResolvedValueOnce({ Items: [] }); // QueryCommand — trade query
+      mockSend.mockResolvedValueOnce({ Items: [] }); // QueryCommand — performance query
+      mockSend.mockResolvedValueOnce({ Items: backtests }); // QueryCommand — backtest query
+      mockS3Send.mockResolvedValueOnce({}); // S3 delete for bt-001
+      mockSend.mockResolvedValueOnce({}); // DeleteCommand — DDB delete for bt-001
+      mockSend.mockResolvedValueOnce({}); // DeleteCommand — DDB delete for bt-002
+      mockEventBridgeSend.mockResolvedValueOnce({});
+
+      const event = buildRouteEvent({
+        httpMethod: 'DELETE',
+        resource: '/trading/bots/{botId}',
+        pathParameters: { botId: 'bot-001' },
+      });
+
+      const result = await deleteBot(event);
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.deleted).toBe(true);
+
+      // Verify S3 delete was called for the backtest that has an s3Key
+      const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+      expect(DeleteObjectCommand).toHaveBeenCalledTimes(1);
+      expect(DeleteObjectCommand.mock.calls[0][0].Key).toBe('backtests/user-123/bot-001/bt-001.json');
+
+      // Verify both backtest DDB records were deleted
+      const { DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+      const deleteKeys = DeleteCommand.mock.calls.map((c: [{ Key: unknown }]) => c[0].Key);
+      expect(deleteKeys).toContainEqual({ sub: 'user-123', backtestId: 'bt-001' });
+      expect(deleteKeys).toContainEqual({ sub: 'user-123', backtestId: 'bt-002' });
+    });
+
+    /** Verifies deletion still returns 200 when backtest cleanup fails. */
+    it('returns 200 even when backtest cleanup throws', async () => {
+      mockSend.mockResolvedValueOnce({}); // DeleteCommand — bot
+      mockSend.mockResolvedValueOnce({ Items: [] }); // QueryCommand — trade query
+      mockSend.mockResolvedValueOnce({ Items: [] }); // QueryCommand — performance query
+      mockSend.mockRejectedValueOnce(new Error('Backtest query failed')); // QueryCommand — backtest query fails
+      mockEventBridgeSend.mockResolvedValueOnce({});
+
+      const event = buildRouteEvent({
+        httpMethod: 'DELETE',
+        resource: '/trading/bots/{botId}',
+        pathParameters: { botId: 'bot-001' },
+      });
+
+      const result = await deleteBot(event);
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.deleted).toBe(true);
+    });
+  });
+
+  /**
+   * Tests for the updateBot backtest invalidation logic.
+   */
+  describe('updateBot — backtest invalidation', () => {
+    /** Verifies backtests are marked stale when buy/sell queries change. */
+    it('marks existing backtests as stale when buyQuery changes', async () => {
+      const currentBot = {
+        sub: 'user-123', botId: 'bot-001', status: 'active', executionMode: 'condition_cooldown',
+        buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+        buySizing: { type: 'fixed', value: 100 },
+      };
+      const newBuyQuery = { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '60000' }] };
+      const updatedAttrs = {
+        ...currentBot,
+        buyQuery: newBuyQuery,
+      };
+      const existingBacktests = [
+        { sub: 'user-123', backtestId: 'bt-001', botId: 'bot-001', configChangedSinceTest: false },
+        { sub: 'user-123', backtestId: 'bt-002', botId: 'bot-001', configChangedSinceTest: false },
+      ];
+
+      mockSend.mockResolvedValueOnce({ Item: currentBot }); // GetCommand
+      mockSend.mockResolvedValueOnce({ Attributes: updatedAttrs }); // UpdateCommand — update bot
+      mockEventBridgeSend.mockResolvedValueOnce({}); // EventBridge
+      mockSend.mockResolvedValueOnce({ Items: existingBacktests }); // QueryCommand — backtest list
+      mockSend.mockResolvedValueOnce({}); // UpdateCommand — mark bt-001 stale
+      mockSend.mockResolvedValueOnce({}); // UpdateCommand — mark bt-002 stale
+
+      const event = buildRouteEvent({
+        httpMethod: 'PUT',
+        resource: '/trading/bots/{botId}',
+        pathParameters: { botId: 'bot-001' },
+        body: JSON.stringify({ buyQuery: newBuyQuery }),
+      });
+
+      const result = await updateBot(event);
+      expect(result.statusCode).toBe(200);
+
+      const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+      // Find the calls that update backtests (set configChangedSinceTest = true)
+      const stalenessUpdates = UpdateCommand.mock.calls.filter(
+        (call: [{ TableName: string }]) => call[0].TableName === 'BacktestsTable',
+      );
+      expect(stalenessUpdates).toHaveLength(2);
+      expect(stalenessUpdates[0][0].ExpressionAttributeValues[':changed']).toBe(true);
+    });
+
+    /** Verifies backtests are NOT marked stale when only the bot name changes (not queries). */
+    it('does not mark backtests stale when only name is updated (no query change)', async () => {
+      const currentBot = {
+        sub: 'user-123', botId: 'bot-001', name: 'Old Name', status: 'active', executionMode: 'condition_cooldown',
+      };
+      const updatedAttrs = { ...currentBot, name: 'New Name' };
+      mockSend.mockResolvedValueOnce({ Item: currentBot }); // GetCommand
+      mockSend.mockResolvedValueOnce({ Attributes: updatedAttrs }); // UpdateCommand — update bot
+      mockEventBridgeSend.mockResolvedValueOnce({}); // EventBridge
+
+      const event = buildRouteEvent({
+        httpMethod: 'PUT',
+        resource: '/trading/bots/{botId}',
+        pathParameters: { botId: 'bot-001' },
+        body: JSON.stringify({ name: 'New Name' }),
+      });
+
+      await updateBot(event);
+
+      const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+      const backtestUpdates = UpdateCommand.mock.calls.filter(
+        (call: [{ TableName: string }]) => call[0].TableName === 'BacktestsTable',
+      );
+      expect(backtestUpdates).toHaveLength(0);
+    });
+
+    /** Verifies backtests are marked stale when stopLoss is changed (affects SL/TP evaluation). */
+    it('marks backtests stale when stopLoss is updated', async () => {
+      const currentBot = {
+        sub: 'user-123', botId: 'bot-001', status: 'active', executionMode: 'condition_cooldown',
+        stopLoss: { percentage: 5 },
+      };
+      const updatedAttrs = { ...currentBot, stopLoss: { percentage: 10 } };
+      const existingBacktests = [
+        { sub: 'user-123', backtestId: 'bt-001', botId: 'bot-001' },
+      ];
+
+      mockSend.mockResolvedValueOnce({ Item: currentBot }); // GetCommand
+      mockSend.mockResolvedValueOnce({ Attributes: updatedAttrs }); // UpdateCommand — bot
+      mockEventBridgeSend.mockResolvedValueOnce({}); // EventBridge
+      mockSend.mockResolvedValueOnce({ Items: existingBacktests }); // QueryCommand
+      mockSend.mockResolvedValueOnce({}); // UpdateCommand — mark stale
+
+      const event = buildRouteEvent({
+        httpMethod: 'PUT',
+        resource: '/trading/bots/{botId}',
+        pathParameters: { botId: 'bot-001' },
+        body: JSON.stringify({ stopLoss: { percentage: 10 } }),
+      });
+
+      const result = await updateBot(event);
+      expect(result.statusCode).toBe(200);
+
+      const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+      const stalenessUpdates = UpdateCommand.mock.calls.filter(
+        (call: [{ TableName: string }]) => call[0].TableName === 'BacktestsTable',
+      );
+      expect(stalenessUpdates).toHaveLength(1);
+    });
+
+    /** Verifies that backtest staleness errors are swallowed and do not fail the update. */
+    it('continues when backtest staleness update fails', async () => {
+      const currentBot = {
+        sub: 'user-123', botId: 'bot-001', status: 'active', executionMode: 'condition_cooldown',
+        buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '50000' }] },
+        buySizing: { type: 'fixed', value: 100 },
+      };
+      const newBuyQuery = { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '60000' }] };
+      const updatedAttrs = { ...currentBot, buyQuery: newBuyQuery };
+
+      mockSend.mockResolvedValueOnce({ Item: currentBot }); // GetCommand
+      mockSend.mockResolvedValueOnce({ Attributes: updatedAttrs }); // UpdateCommand — update bot
+      mockEventBridgeSend.mockResolvedValueOnce({}); // EventBridge
+      mockSend.mockRejectedValueOnce(new Error('QueryCommand failed')); // backtest query fails
+
+      const event = buildRouteEvent({
+        httpMethod: 'PUT',
+        resource: '/trading/bots/{botId}',
+        pathParameters: { botId: 'bot-001' },
+        body: JSON.stringify({ buyQuery: newBuyQuery }),
+      });
+
+      const result = await updateBot(event);
+      // Should still succeed even though backtest invalidation failed
+      expect(result.statusCode).toBe(200);
     });
   });
 

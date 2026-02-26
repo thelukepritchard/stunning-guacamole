@@ -25,6 +25,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ScienceIcon from '@mui/icons-material/Science';
 import { QueryBuilder, type RuleGroupType } from 'react-querybuilder';
 import { QueryBuilderMaterial } from '@react-querybuilder/material';
 import { botFields } from '../data/botFields';
@@ -785,6 +786,16 @@ export default function Bots() {
                           title="View Performance"
                         >
                           <BarChartIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/bots/backtest/${bot.botId}`);
+                          }}
+                          title="Backtest"
+                        >
+                          <ScienceIcon fontSize="small" />
                         </IconButton>
                         <IconButton
                           size="small"

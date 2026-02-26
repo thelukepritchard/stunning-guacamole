@@ -1,9 +1,9 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { jsonResponse } from '../utils';
-import type { BotRecord } from '../types';
+import type { BotRecord, BacktestMetadataRecord } from '../types';
 import { TRADING_EVENT_SOURCE } from '../types';
 import type { BotUpdatedDetail } from '../types';
 
@@ -82,8 +82,7 @@ const NULLABLE_FIELDS = ['stopLoss', 'takeProfit'];
  * sellSizing) is mandatory when the corresponding query is present.
  *
  * Publishes a BotUpdated event to EventBridge with previous status and
- * whether queries changed, enabling the lifecycle handler to manage
- * SNS subscriptions.
+ * whether queries changed.
  *
  * @param event - The incoming API Gateway event.
  * @returns A JSON response with the updated bot attributes.
@@ -220,7 +219,7 @@ export async function updateBot(event: APIGatewayProxyEvent): Promise<APIGateway
 
     const updatedBot = result.Attributes as BotRecord;
 
-    // Publish BotUpdated event — queries or SL/TP changes affect subscriptions
+    // Publish BotUpdated event and check if bot rules or SL/TP config changed
     const queriesChanged = JSON.stringify(currentBot.buyQuery) !== JSON.stringify(updatedBot.buyQuery)
       || JSON.stringify(currentBot.sellQuery) !== JSON.stringify(updatedBot.sellQuery)
       || JSON.stringify(currentBot.stopLoss) !== JSON.stringify(updatedBot.stopLoss)
@@ -240,6 +239,30 @@ export async function updateBot(event: APIGatewayProxyEvent): Promise<APIGateway
       }));
     } catch (err) {
       console.error('Failed to publish BotUpdated event:', err);
+    }
+
+    // Mark existing backtests as stale when buy/sell rules change
+    if (queriesChanged && process.env.BACKTESTS_TABLE_NAME) {
+      try {
+        const backtestResults = await ddbDoc.send(new QueryCommand({
+          TableName: process.env.BACKTESTS_TABLE_NAME,
+          IndexName: 'botId-index',
+          KeyConditionExpression: 'botId = :botId',
+          ExpressionAttributeValues: { ':botId': botId },
+        }));
+
+        const backtests = (backtestResults.Items ?? []) as BacktestMetadataRecord[];
+        await Promise.all(backtests.map((bt) =>
+          ddbDoc.send(new UpdateCommand({
+            TableName: process.env.BACKTESTS_TABLE_NAME!,
+            Key: { sub, backtestId: bt.backtestId },
+            UpdateExpression: 'SET configChangedSinceTest = :changed',
+            ExpressionAttributeValues: { ':changed': true },
+          })),
+        ));
+      } catch (err) {
+        console.error('Failed to invalidate backtest records:', err);
+      }
     }
 
     return jsonResponse(200, updatedBot);

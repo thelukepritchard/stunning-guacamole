@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router';
 import Alert from '@mui/material/Alert';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
@@ -49,6 +50,7 @@ const MEDAL_COLORS: Record<number, string> = {
  */
 export default function Leaderboard() {
   const { request } = useApi();
+  const navigate = useNavigate();
 
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,11 +104,15 @@ export default function Leaderboard() {
           {entries.slice(0, 3).map((entry) => (
             <Card
               key={entry.username}
+              onClick={() => navigate(`/leaderboard/${entry.username}`)}
               sx={{
                 flex: 1,
                 position: 'relative',
                 overflow: 'visible',
                 borderTop: `3px solid ${MEDAL_COLORS[entry.rank]}`,
+                cursor: 'pointer',
+                '&:hover': { boxShadow: 4 },
+                transition: 'box-shadow 0.2s',
               }}
             >
               <CardContent sx={{ textAlign: 'center', pt: 3 }}>
@@ -181,7 +187,12 @@ export default function Leaderboard() {
               </TableHead>
               <TableBody>
                 {entries.map((entry) => (
-                  <TableRow key={entry.username} hover>
+                  <TableRow
+                    key={entry.username}
+                    hover
+                    onClick={() => navigate(`/leaderboard/${entry.username}`)}
+                    sx={{ cursor: 'pointer' }}
+                  >
                     <TableCell>
                       {entry.rank <= 3 ? (
                         <Chip

@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { submitFeedback } from './routes/submit-feedback';
+import { deleteAccount } from './routes/delete-account';
 
 /**
  * Lambda entry-point. Routes the incoming API Gateway request to the
@@ -13,6 +14,7 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
   switch (routeKey) {
     case 'POST /core/feedback': return submitFeedback(event);
+    case 'DELETE /core/account': return deleteAccount(event);
     default:
       return {
         statusCode: 404,

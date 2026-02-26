@@ -16,6 +16,10 @@ const mockListBotTrades = jest.fn().mockResolvedValue(mockResponse);
 const mockGetSettings = jest.fn().mockResolvedValue(mockResponse);
 const mockUpdateSettings = jest.fn().mockResolvedValue(mockResponse);
 const mockGetExchangeOptions = jest.fn().mockResolvedValue(mockResponse);
+const mockSubmitBacktest = jest.fn().mockResolvedValue(mockResponse);
+const mockListBacktests = jest.fn().mockResolvedValue(mockResponse);
+const mockGetLatestBacktest = jest.fn().mockResolvedValue(mockResponse);
+const mockGetBacktest = jest.fn().mockResolvedValue(mockResponse);
 
 jest.mock('../routes/list-bots', () => ({ listBots: mockListBots }));
 jest.mock('../routes/create-bot', () => ({ createBot: mockCreateBot }));
@@ -27,6 +31,10 @@ jest.mock('../routes/list-bot-trades', () => ({ listBotTrades: mockListBotTrades
 jest.mock('../routes/get-settings', () => ({ getSettings: mockGetSettings }));
 jest.mock('../routes/update-settings', () => ({ updateSettings: mockUpdateSettings }));
 jest.mock('../routes/get-exchange-options', () => ({ getExchangeOptions: mockGetExchangeOptions }));
+jest.mock('../routes/submit-backtest', () => ({ submitBacktest: mockSubmitBacktest }));
+jest.mock('../routes/list-backtests', () => ({ listBacktests: mockListBacktests }));
+jest.mock('../routes/get-latest-backtest', () => ({ getLatestBacktest: mockGetLatestBacktest }));
+jest.mock('../routes/get-backtest', () => ({ getBacktest: mockGetBacktest }));
 
 import { handler } from '../index';
 import { buildEvent } from '../../test-utils';
@@ -154,6 +162,62 @@ describe('trading handler', () => {
     const result = await handler(event);
 
     expect(mockGetExchangeOptions).toHaveBeenCalledWith(event);
+    expect(result).toBe(mockResponse);
+  });
+
+  /** Verifies POST /trading/bots/{botId}/backtests dispatches to submitBacktest. */
+  it('routes POST /trading/bots/{botId}/backtests to submitBacktest', async () => {
+    const event = buildEvent({
+      httpMethod: 'POST',
+      resource: '/trading/bots/{botId}/backtests',
+      pathParameters: { botId: 'bot-001' },
+    });
+
+    const result = await handler(event);
+
+    expect(mockSubmitBacktest).toHaveBeenCalledWith(event);
+    expect(result).toBe(mockResponse);
+  });
+
+  /** Verifies GET /trading/bots/{botId}/backtests dispatches to listBacktests. */
+  it('routes GET /trading/bots/{botId}/backtests to listBacktests', async () => {
+    const event = buildEvent({
+      httpMethod: 'GET',
+      resource: '/trading/bots/{botId}/backtests',
+      pathParameters: { botId: 'bot-001' },
+    });
+
+    const result = await handler(event);
+
+    expect(mockListBacktests).toHaveBeenCalledWith(event);
+    expect(result).toBe(mockResponse);
+  });
+
+  /** Verifies GET /trading/bots/{botId}/backtests/latest dispatches to getLatestBacktest. */
+  it('routes GET /trading/bots/{botId}/backtests/latest to getLatestBacktest', async () => {
+    const event = buildEvent({
+      httpMethod: 'GET',
+      resource: '/trading/bots/{botId}/backtests/latest',
+      pathParameters: { botId: 'bot-001' },
+    });
+
+    const result = await handler(event);
+
+    expect(mockGetLatestBacktest).toHaveBeenCalledWith(event);
+    expect(result).toBe(mockResponse);
+  });
+
+  /** Verifies GET /trading/bots/{botId}/backtests/{backtestId} dispatches to getBacktest. */
+  it('routes GET /trading/bots/{botId}/backtests/{backtestId} to getBacktest', async () => {
+    const event = buildEvent({
+      httpMethod: 'GET',
+      resource: '/trading/bots/{botId}/backtests/{backtestId}',
+      pathParameters: { botId: 'bot-001', backtestId: 'bt-001' },
+    });
+
+    const result = await handler(event);
+
+    expect(mockGetBacktest).toHaveBeenCalledWith(event);
     expect(result).toBe(mockResponse);
   });
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { fetchUserAttributes } from 'aws-amplify/auth';
+import { useNavigate } from 'react-router';
+import { fetchUserAttributes, signOut } from 'aws-amplify/auth';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -74,7 +75,13 @@ export default function Settings() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
 
+  // Delete account state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
   const { request } = useApi();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchUserAttributes()
@@ -185,6 +192,22 @@ export default function Settings() {
   const getExchangeName = (id: ExchangeId) =>
     exchangeOptions.find((e) => e.exchangeId === id)?.name ?? id;
 
+  /** Handles account deletion after confirmation. */
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    setError(null);
+    try {
+      await request('DELETE', '/core/account');
+      await signOut();
+      navigate('/sign-in');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete account');
+      setDeleteConfirmText('');
+      setDeleteDialogOpen(false);
+      setDeleting(false);
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ mb: 4 }}>
@@ -293,7 +316,71 @@ export default function Settings() {
             )}
           </CardContent>
         </Card>
+        {/* Delete Account */}
+        <Card sx={{ borderColor: 'error.main', borderWidth: 1, borderStyle: 'solid' }}>
+          <CardContent sx={{ p: 3 }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+              <Box>
+                <Typography variant="h6" color="error">Danger Zone</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Permanently delete your account and all associated data.
+                </Typography>
+              </Box>
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                onClick={() => { setDeleteDialogOpen(true); setDeleteConfirmText(''); }}
+              >
+                Delete Account
+              </Button>
+            </Stack>
+            <Divider sx={{ mb: 2 }} />
+            <Typography variant="body2" color="text.secondary">
+              This will permanently remove your profile, all bots, trades, backtests,
+              exchange settings, and demo data. This action cannot be undone.
+            </Typography>
+          </CardContent>
+        </Card>
       </Stack>
+
+      {/* Delete Account Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => !deleting && setDeleteDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle color="error">Delete Account</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="error" icon={<WarningAmberIcon />}>
+              This action is <strong>permanent and irreversible</strong>. All of your data
+              will be deleted immediately.
+            </Alert>
+            <Typography variant="body2" color="text.secondary">
+              Type <strong>delete</strong> below to confirm.
+            </Typography>
+            <TextField
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="delete"
+              fullWidth
+              size="small"
+              autoComplete="off"
+              disabled={deleting}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteDialogOpen(false)} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteAccount}
+            disabled={deleting || deleteConfirmText !== 'delete'}
+          >
+            {deleting ? <CircularProgress size={20} /> : 'Delete My Account'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Configure Exchange Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>

@@ -137,6 +137,12 @@ export class DomainPortfolioStack extends cdk.NestedStack {
     // GET /portfolio/leaderboard — top users by 24h profit
     leaderboardResource.addMethod('GET', integration, methodOptions);
 
+    // /portfolio/leaderboard/{username}
+    const traderProfileResource = leaderboardResource.addResource('{username}');
+    traderProfileResource.addCorsPreflight(corsOptions);
+    // GET /portfolio/leaderboard/{username} — public trader profile
+    traderProfileResource.addMethod('GET', integration, methodOptions);
+
     // /portfolio/{id}
     const idResource = resource.addResource('{id}');
     idResource.addCorsPreflight(corsOptions);

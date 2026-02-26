@@ -17,9 +17,9 @@ import { handler } from '../async/bot-executor';
 
 /**
  * Tests for the bot executor Lambda.
- * Each SNS invocation corresponds to a single action (buy or sell),
- * determined by which GSI (buySubscriptionArn-index or sellSubscriptionArn-index)
- * matches the subscription ARN.
+ * A single static SNS subscription delivers all indicator ticks.
+ * The handler queries all active bots for the pair via pair-status GSI
+ * and evaluates both buy and sell actions for each bot.
  */
 describe('bot-executor handler', () => {
   /** Baseline indicator snapshot for all tests. */
@@ -42,23 +42,19 @@ describe('bot-executor handler', () => {
     bb_position: 'between_bands',
   };
 
-  /** GSI results — buy match returns keys, sell returns empty. */
-  const buyGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-  const gsiMiss = { Items: [] };
-
   /**
-   * Builds a mock SNS event with indicator data.
+   * Builds a mock SNS event with indicator data and pair message attribute.
    *
-   * @param subscriptionArn - The subscription ARN for the record.
    * @param message - The indicators to include in the message.
+   * @param pair - The trading pair (defaults to 'BTC/USDT').
    * @returns A mock SNS event.
    */
-  function buildSnsEvent(subscriptionArn: string, message: IndicatorSnapshot): SNSEvent {
+  function buildSnsEvent(message: IndicatorSnapshot, pair = 'BTC/USDT'): SNSEvent {
     return {
       Records: [
         {
           EventSource: 'aws:sns',
-          EventSubscriptionArn: subscriptionArn,
+          EventSubscriptionArn: 'arn:aws:sns:ap-southeast-2:123456789012:PriceTopic:static-sub',
           EventVersion: '1.0',
           Sns: {
             Type: 'Notification',
@@ -70,7 +66,9 @@ describe('bot-executor handler', () => {
             Signature: '',
             SigningCertUrl: '',
             UnsubscribeUrl: '',
-            MessageAttributes: {},
+            MessageAttributes: {
+              pair: { Type: 'String', Value: pair },
+            },
           },
         },
       ],
@@ -83,24 +81,17 @@ describe('bot-executor handler', () => {
     process.env.TRADES_TABLE_NAME = 'TradesTable';
   });
 
-  /** Verifies the handler exits early when the bot is not found via either GSI. */
-  it('exits early when bot is not found', async () => {
-    mockSend.mockResolvedValueOnce(gsiMiss); // buySubscriptionArn GSI
-    mockSend.mockResolvedValueOnce(gsiMiss); // sellSubscriptionArn GSI
+  /** Verifies the handler does nothing when no active bots match the pair. */
+  it('exits early when no active bots for pair', async () => {
+    mockSend.mockResolvedValueOnce({ Items: [] }); // pair-status GSI query
 
-    const event = buildSnsEvent(
-      'arn:aws:sns:ap-southeast-2:123456789012:PriceTopic:nonexistent',
-      indicators,
-    );
+    await handler(buildSnsEvent(indicators));
 
-    await handler(event);
-
-    // Two parallel GSI queries, nothing else
-    expect(mockSend).toHaveBeenCalledTimes(2);
+    expect(mockSend).toHaveBeenCalledTimes(1);
   });
 
-  /** Verifies the handler exits early when the bot is not active. */
-  it('exits early when bot is not active', async () => {
+  /** Verifies the handler skips a bot that is no longer active on consistent read. */
+  it('skips bot that is no longer active on consistent read', async () => {
     const bot = {
       sub: 'user-123',
       botId: 'bot-001',
@@ -110,23 +101,49 @@ describe('bot-executor handler', () => {
       buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
     };
 
-    mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-    mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
-    mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI query
+    mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get (paused)
 
-    const event = buildSnsEvent('arn:sub-buy', indicators);
+    await handler(buildSnsEvent(indicators));
+
+    // GSI query + consistent get — bot skipped
+    expect(mockSend).toHaveBeenCalledTimes(2);
+  });
+
+  /** Verifies the handler skips records without a pair message attribute. */
+  it('skips SNS records without pair attribute', async () => {
+    const event: SNSEvent = {
+      Records: [
+        {
+          EventSource: 'aws:sns',
+          EventSubscriptionArn: 'arn:sub',
+          EventVersion: '1.0',
+          Sns: {
+            Type: 'Notification',
+            MessageId: 'msg-001',
+            TopicArn: 'arn:topic',
+            Message: JSON.stringify(indicators),
+            Timestamp: '2026-01-01T00:00:00.000Z',
+            SignatureVersion: '1',
+            Signature: '',
+            SigningCertUrl: '',
+            UnsubscribeUrl: '',
+            MessageAttributes: {},
+          },
+        },
+      ],
+    } as unknown as SNSEvent;
 
     await handler(event);
 
-    // 2 GSI queries + 1 get
-    expect(mockSend).toHaveBeenCalledTimes(3);
+    expect(mockSend).not.toHaveBeenCalled();
   });
 
   /**
    * Tests for condition_cooldown mode.
    */
   describe('condition_cooldown mode', () => {
-    /** Verifies a buy trade fires when conditions match and no cooldown is active. */
+    /** Verifies a buy trade fires when conditions match. */
     it('records a buy trade when buyQuery matches', async () => {
       const bot = {
         sub: 'user-123',
@@ -135,26 +152,24 @@ describe('bot-executor handler', () => {
         status: 'active',
         executionMode: 'condition_cooldown',
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
-        buySubscriptionArn: 'arn:sub-buy',
       };
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // trade put
-      mockSend.mockResolvedValueOnce({}); // updateEntryPrice
+      mockSend.mockResolvedValueOnce({}); // trade put (buy)
+      mockSend.mockResolvedValueOnce({}); // updateEntryPrice (buy)
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get + trade + updateEntryPrice
-      expect(mockSend).toHaveBeenCalledTimes(5);
+      // GSI + get + trade + entryPrice
+      expect(mockSend).toHaveBeenCalledTimes(4);
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       expect(PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item.action).toBe('buy');
       expect(PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item.trigger).toBe('rule');
     });
 
-    /** Verifies a sell trade fires from a sell subscription. */
-    it('records a sell trade when sellQuery matches via sell subscription', async () => {
+    /** Verifies a sell trade fires when sellQuery matches. */
+    it('records a sell trade when sellQuery matches', async () => {
       const bot = {
         sub: 'user-123',
         botId: 'bot-001',
@@ -162,20 +177,17 @@ describe('bot-executor handler', () => {
         status: 'active',
         executionMode: 'condition_cooldown',
         sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '60' }] },
-        sellSubscriptionArn: 'arn:sub-sell',
       };
 
-      const sellGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-      mockSend.mockResolvedValueOnce(gsiMiss);      // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(sellGsiHit);    // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // trade put
-      mockSend.mockResolvedValueOnce({}); // updateEntryPrice
+      // buy action skipped (no buyQuery)
+      mockSend.mockResolvedValueOnce({}); // trade put (sell)
+      mockSend.mockResolvedValueOnce({}); // updateEntryPrice (sell)
 
-      await handler(buildSnsEvent('arn:sub-sell', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get + trade + updateEntryPrice
-      expect(mockSend).toHaveBeenCalledTimes(5);
+      expect(mockSend).toHaveBeenCalledTimes(4);
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       expect(PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item.action).toBe('sell');
       expect(PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item.trigger).toBe('rule');
@@ -191,21 +203,19 @@ describe('bot-executor handler', () => {
         executionMode: 'condition_cooldown',
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
         cooldownMinutes: 30,
-        buySubscriptionArn: 'arn:sub-buy',
       };
 
       const conditionError = new Error('Condition not met');
       (conditionError as unknown as { name: string }).name = 'ConditionalCheckFailedException';
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
       mockSend.mockRejectedValueOnce(conditionError); // conditional update rejected
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get + rejected conditional update — no trade recorded
-      expect(mockSend).toHaveBeenCalledTimes(4);
+      // GSI + get + rejected conditional update — no trade recorded
+      expect(mockSend).toHaveBeenCalledTimes(3);
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       expect(PutCommand).not.toHaveBeenCalled();
     });
@@ -220,20 +230,18 @@ describe('bot-executor handler', () => {
         executionMode: 'condition_cooldown',
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
         cooldownMinutes: 30,
-        buySubscriptionArn: 'arn:sub-buy',
       };
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
       mockSend.mockResolvedValueOnce({}); // conditional update (set buyCooldownUntil)
       mockSend.mockResolvedValueOnce({}); // trade put
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
       const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-      // First UpdateCommand is cooldown, second is entryPrice
+      // First UpdateCommand is cooldown
       const cooldownCall = UpdateCommand.mock.calls[0][0];
       expect(cooldownCall.ExpressionAttributeNames['#cd']).toBe('buyCooldownUntil');
       expect(cooldownCall.ExpressionAttributeValues[':cd']).toBeDefined();
@@ -248,21 +256,18 @@ describe('bot-executor handler', () => {
         status: 'active',
         executionMode: 'condition_cooldown',
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
-        buySubscriptionArn: 'arn:sub-buy',
       };
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
       mockSend.mockResolvedValueOnce({}); // trade put
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get + trade + updateEntryPrice
-      expect(mockSend).toHaveBeenCalledTimes(5);
+      // GSI + get + trade + entryPrice
+      expect(mockSend).toHaveBeenCalledTimes(4);
       const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
-      // Only one UpdateCommand call — for entryPrice
       expect(UpdateCommand).toHaveBeenCalledTimes(1);
       const entryPriceCall = UpdateCommand.mock.calls[0][0];
       expect(entryPriceCall.UpdateExpression).toBe('SET entryPrice = :price');
@@ -281,17 +286,15 @@ describe('bot-executor handler', () => {
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
         cooldownMinutes: 30,
         buyCooldownUntil: futureTime,
-        buySubscriptionArn: 'arn:sub-buy',
       };
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get — buy suppressed by cooldown
-      expect(mockSend).toHaveBeenCalledTimes(3);
+      // GSI + get — buy suppressed by cooldown
+      expect(mockSend).toHaveBeenCalledTimes(2);
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       expect(PutCommand).not.toHaveBeenCalled();
     });
@@ -308,20 +311,18 @@ describe('bot-executor handler', () => {
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
         cooldownMinutes: 30,
         buyCooldownUntil: pastTime,
-        buySubscriptionArn: 'arn:sub-buy',
       };
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
       mockSend.mockResolvedValueOnce({}); // conditional update (set buyCooldownUntil)
       mockSend.mockResolvedValueOnce({}); // trade put
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get + conditional update + trade + updateEntryPrice
-      expect(mockSend).toHaveBeenCalledTimes(6);
+      // GSI + get + conditional update + trade + entryPrice
+      expect(mockSend).toHaveBeenCalledTimes(5);
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       expect(PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item.action).toBe('buy');
     });
@@ -331,7 +332,7 @@ describe('bot-executor handler', () => {
    * Tests for once_and_wait mode.
    */
   describe('once_and_wait mode', () => {
-    /** Verifies a buy trade fires when no previous action exists. */
+    /** Verifies both buy and sell are evaluated per bot invocation. */
     it('records a buy trade on first trigger (no lastAction)', async () => {
       const bot = {
         sub: 'user-123',
@@ -340,20 +341,20 @@ describe('bot-executor handler', () => {
         status: 'active',
         executionMode: 'once_and_wait',
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
-        buySubscriptionArn: 'arn:sub-buy',
+        sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '90' }] }, // won't match
       };
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // conditional update (claim action)
-      mockSend.mockResolvedValueOnce({}); // trade put
-      mockSend.mockResolvedValueOnce({}); // updateEntryPrice
+      mockSend.mockResolvedValueOnce({}); // conditional update (claim buy)
+      mockSend.mockResolvedValueOnce({}); // trade put (buy)
+      mockSend.mockResolvedValueOnce({}); // updateEntryPrice (buy)
+      // sell skipped — sell query doesn't match (rsi_14=65 not > 90)
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get + claim + trade + updateEntryPrice
-      expect(mockSend).toHaveBeenCalledTimes(6);
+      // GSI + get + claim + trade + entryPrice
+      expect(mockSend).toHaveBeenCalledTimes(5);
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       expect(PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item.action).toBe('buy');
       expect(PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item.trigger).toBe('rule');
@@ -368,21 +369,21 @@ describe('bot-executor handler', () => {
         status: 'active',
         executionMode: 'once_and_wait',
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
+        sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '90' }] }, // won't match
         lastAction: 'buy',
-        buySubscriptionArn: 'arn:sub-buy',
       };
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
+      // buy blocked by lastAction; sell query doesn't match
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get — buy blocked by lastAction
-      expect(mockSend).toHaveBeenCalledTimes(3);
+      // GSI + get — both actions skipped
+      expect(mockSend).toHaveBeenCalledTimes(2);
     });
 
-    /** Verifies sell fires when lastAction is 'buy' (counter-action) via sell subscription. */
+    /** Verifies sell fires when lastAction is 'buy' (counter-action). */
     it('allows sell when lastAction is buy (counter-action)', async () => {
       const bot = {
         sub: 'user-123',
@@ -393,21 +394,19 @@ describe('bot-executor handler', () => {
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
         sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '60' }] },
         lastAction: 'buy',
-        sellSubscriptionArn: 'arn:sub-sell',
       };
 
-      const sellGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-      mockSend.mockResolvedValueOnce(gsiMiss);      // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(sellGsiHit);    // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // conditional update (claim action)
+      // buy blocked by lastAction='buy'
+      mockSend.mockResolvedValueOnce({}); // conditional update (claim sell)
       mockSend.mockResolvedValueOnce({}); // sell trade put
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice (clear)
 
-      await handler(buildSnsEvent('arn:sub-sell', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get + claim + trade + updateEntryPrice
-      expect(mockSend).toHaveBeenCalledTimes(6);
+      // GSI + get + claim + trade + entryPrice
+      expect(mockSend).toHaveBeenCalledTimes(5);
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       expect(PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item.action).toBe('sell');
     });
@@ -425,20 +424,18 @@ describe('bot-executor handler', () => {
         pair: 'BTC/USDT',
         status: 'active',
         executionMode: 'condition_cooldown',
-        sellSubscriptionArn: 'arn:sub-sell',
         stopLoss: { percentage: 10 },
         entryPrice: 55000, // 10% below = 49500 → current price 48000 < 49500 → triggers
       };
 
       const slIndicators = { ...indicators, price: 48000 };
-      const sellGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-      mockSend.mockResolvedValueOnce(gsiMiss);      // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(sellGsiHit);    // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // trade put
+      // buy: no buyQuery → skipped
+      mockSend.mockResolvedValueOnce({}); // trade put (sell via SL)
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice (clear)
 
-      await handler(buildSnsEvent('arn:sub-sell', slIndicators));
+      await handler(buildSnsEvent(slIndicators));
 
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       const trade = PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item;
@@ -454,19 +451,17 @@ describe('bot-executor handler', () => {
         pair: 'BTC/USDT',
         status: 'active',
         executionMode: 'condition_cooldown',
-        sellSubscriptionArn: 'arn:sub-sell',
         takeProfit: { percentage: 20 },
         entryPrice: 40000, // 20% above = 48000 → current price 50000 > 48000 → triggers
       };
 
-      const sellGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-      mockSend.mockResolvedValueOnce(gsiMiss);      // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(sellGsiHit);    // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // trade put
+      // buy: no buyQuery → skipped
+      mockSend.mockResolvedValueOnce({}); // trade put (sell via TP)
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice (clear)
 
-      await handler(buildSnsEvent('arn:sub-sell', indicators));
+      await handler(buildSnsEvent(indicators));
 
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       const trade = PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item;
@@ -482,20 +477,17 @@ describe('bot-executor handler', () => {
         pair: 'BTC/USDT',
         status: 'active',
         executionMode: 'condition_cooldown',
-        sellSubscriptionArn: 'arn:sub-sell',
         stopLoss: { percentage: 10 },
         // No entryPrice — SL/TP cannot evaluate, and no sellQuery → no trade
       };
 
-      const sellGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-      mockSend.mockResolvedValueOnce(gsiMiss);      // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(sellGsiHit);    // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
 
-      await handler(buildSnsEvent('arn:sub-sell', indicators));
+      await handler(buildSnsEvent(indicators));
 
-      // 2 GSI + get — no trade
-      expect(mockSend).toHaveBeenCalledTimes(3);
+      // GSI + get — no trade
+      expect(mockSend).toHaveBeenCalledTimes(2);
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       expect(PutCommand).not.toHaveBeenCalled();
     });
@@ -508,23 +500,22 @@ describe('bot-executor handler', () => {
         pair: 'BTC/USDT',
         status: 'active',
         executionMode: 'once_and_wait',
+        buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '100000' }] }, // won't match
         sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '90' }] }, // Would NOT match
-        sellSubscriptionArn: 'arn:sub-sell',
         stopLoss: { percentage: 5 },
         entryPrice: 50000, // 5% below = 47500 → current price 46000 < 47500 → triggers
         lastAction: 'buy',
       };
 
       const slIndicators = { ...indicators, price: 46000 };
-      const sellGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-      mockSend.mockResolvedValueOnce(gsiMiss);      // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(sellGsiHit);    // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // conditional update (claim action)
+      // buy blocked by lastAction='buy'
+      mockSend.mockResolvedValueOnce({}); // conditional update (claim sell)
       mockSend.mockResolvedValueOnce({}); // sell trade put
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice (clear)
 
-      await handler(buildSnsEvent('arn:sub-sell', slIndicators));
+      await handler(buildSnsEvent(slIndicators));
 
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       const trade = PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item;
@@ -541,18 +532,16 @@ describe('bot-executor handler', () => {
         status: 'active',
         executionMode: 'condition_cooldown',
         sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '60' }] },
-        sellSubscriptionArn: 'arn:sub-sell',
         entryPrice: 45000,
       };
 
-      const sellGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-      mockSend.mockResolvedValueOnce(gsiMiss);      // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(sellGsiHit);    // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // trade put
+      // buy: no buyQuery → skipped
+      mockSend.mockResolvedValueOnce({}); // trade put (sell)
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice (REMOVE)
 
-      await handler(buildSnsEvent('arn:sub-sell', indicators));
+      await handler(buildSnsEvent(indicators));
 
       const { UpdateCommand } = require('@aws-sdk/lib-dynamodb');
       const entryPriceCall = UpdateCommand.mock.calls[UpdateCommand.mock.calls.length - 1][0];
@@ -568,17 +557,15 @@ describe('bot-executor handler', () => {
         status: 'active',
         executionMode: 'condition_cooldown',
         buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
-        buySubscriptionArn: 'arn:sub-buy',
         buySizing: { type: 'fixed', value: 100 },
       };
 
-      mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-      mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+      mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
       mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-      mockSend.mockResolvedValueOnce({}); // trade put
+      mockSend.mockResolvedValueOnce({}); // trade put (buy)
       mockSend.mockResolvedValueOnce({}); // updateEntryPrice
 
-      await handler(buildSnsEvent('arn:sub-buy', indicators));
+      await handler(buildSnsEvent(indicators));
 
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
       const trade = PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0].Item;
@@ -599,16 +586,14 @@ describe('bot-executor handler', () => {
       executionMode: 'condition_cooldown',
       buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
       cooldownMinutes: 30,
-      buySubscriptionArn: 'arn:sub-buy',
     };
 
-    mockSend.mockResolvedValueOnce(buyGsiHit); // buySubscriptionArn GSI
-    mockSend.mockResolvedValueOnce(gsiMiss);   // sellSubscriptionArn GSI
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
     mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
     mockSend.mockRejectedValueOnce(permissionError); // conditional update — permission denied
 
     // Should not throw — error is caught and logged
-    await expect(handler(buildSnsEvent('arn:sub-buy', indicators))).resolves.toBeUndefined();
+    await expect(handler(buildSnsEvent(indicators))).resolves.toBeUndefined();
 
     // No trade should have been recorded
     const { PutCommand } = require('@aws-sdk/lib-dynamodb');
@@ -624,17 +609,15 @@ describe('bot-executor handler', () => {
       status: 'active',
       executionMode: 'condition_cooldown',
       sellQuery: { combinator: 'and', rules: [{ field: 'rsi_14', operator: '>', value: '60' }] },
-      sellSubscriptionArn: 'arn:sub-sell',
     };
 
-    const sellGsiHit = { Items: [{ sub: 'user-123', botId: 'bot-001' }] };
-    mockSend.mockResolvedValueOnce(gsiMiss);      // buySubscriptionArn GSI
-    mockSend.mockResolvedValueOnce(sellGsiHit);    // sellSubscriptionArn GSI
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: 'user-123', botId: 'bot-001' }] }); // GSI
     mockSend.mockResolvedValueOnce({ Item: bot }); // consistent get
-    mockSend.mockResolvedValueOnce({}); // trade put
+    // buy: no buyQuery → skipped
+    mockSend.mockResolvedValueOnce({}); // trade put (sell)
     mockSend.mockResolvedValueOnce({}); // updateEntryPrice
 
-    await handler(buildSnsEvent('arn:sub-sell', indicators));
+    await handler(buildSnsEvent(indicators));
 
     const { PutCommand } = require('@aws-sdk/lib-dynamodb');
     const putCall = PutCommand.mock.calls[PutCommand.mock.calls.length - 1][0];
@@ -648,5 +631,47 @@ describe('bot-executor handler', () => {
     expect(putCall.Item.indicators).toEqual(indicators);
     expect(putCall.Item.timestamp).toBeDefined();
     expect(putCall.Item.createdAt).toBeDefined();
+  });
+
+  /** Verifies multiple bots are processed in a single invocation. */
+  it('processes multiple active bots for the same pair', async () => {
+    const bot1 = {
+      sub: 'user-111',
+      botId: 'bot-001',
+      pair: 'BTC/USDT',
+      status: 'active',
+      executionMode: 'condition_cooldown',
+      buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
+    };
+    const bot2 = {
+      sub: 'user-222',
+      botId: 'bot-002',
+      pair: 'BTC/USDT',
+      status: 'active',
+      executionMode: 'condition_cooldown',
+      buyQuery: { combinator: 'and', rules: [{ field: 'price', operator: '>', value: '40000' }] },
+    };
+
+    mockSend.mockResolvedValueOnce({
+      Items: [
+        { sub: 'user-111', botId: 'bot-001' },
+        { sub: 'user-222', botId: 'bot-002' },
+      ],
+    }); // GSI
+    mockSend.mockResolvedValueOnce({ Item: bot1 }); // consistent get bot1
+    mockSend.mockResolvedValueOnce({ Item: bot2 }); // consistent get bot2
+    mockSend.mockResolvedValueOnce({}); // trade put bot1
+    mockSend.mockResolvedValueOnce({}); // entryPrice bot1
+    mockSend.mockResolvedValueOnce({}); // trade put bot2
+    mockSend.mockResolvedValueOnce({}); // entryPrice bot2
+
+    await handler(buildSnsEvent(indicators));
+
+    // GSI + 2 gets + 2 trades + 2 entryPrices
+    expect(mockSend).toHaveBeenCalledTimes(7);
+    const { PutCommand } = require('@aws-sdk/lib-dynamodb');
+    expect(PutCommand).toHaveBeenCalledTimes(2);
+    expect(PutCommand.mock.calls[0][0].Item.botId).toBe('bot-001');
+    expect(PutCommand.mock.calls[1][0].Item.botId).toBe('bot-002');
   });
 });

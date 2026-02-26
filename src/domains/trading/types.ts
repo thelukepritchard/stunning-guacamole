@@ -55,10 +55,6 @@ export interface BotRecord {
   executionMode: ExecutionMode;
   buyQuery?: RuleGroup;
   sellQuery?: RuleGroup;
-  /** SNS subscription ARN for the buy rule (managed by bot-lifecycle-handler). */
-  buySubscriptionArn?: string;
-  /** SNS subscription ARN for the sell rule (managed by bot-lifecycle-handler). */
-  sellSubscriptionArn?: string;
   /** Tracks the last action that fired (used by once_and_wait mode). */
   lastAction?: BotAction;
   /** Minimum minutes between trades per action (used by condition_cooldown mode). */
@@ -243,6 +239,98 @@ export interface ExchangeOption {
   phase: 1 | 2;
 }
 
+// ─── Backtest Types ────────────────────────────────────────────
+
+/** Backtest lifecycle status. */
+export type BacktestStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+/** Sizing mode label included in backtest reports. */
+export type BacktestSizingMode = 'configured' | 'default_1000_aud';
+
+/** Summary statistics for a completed backtest. */
+export interface BacktestSummary {
+  /** Net profit/loss across all simulated trades (base currency). */
+  netPnl: number;
+  /** Percentage of completed buy→sell cycles that were profitable (0–100). */
+  winRate: number;
+  /** Total simulated trades (buys + sells). */
+  totalTrades: number;
+  /** Total simulated buy trades. */
+  totalBuys: number;
+  /** Total simulated sell trades. */
+  totalSells: number;
+  /** Largest single-trade gain (base currency). */
+  largestGain: number;
+  /** Largest single-trade loss (base currency). */
+  largestLoss: number;
+  /** Average time between buy and matching sell in minutes. */
+  avgHoldTimeMinutes: number;
+}
+
+/** One hourly bucket in the backtest report — 60 one-minute ticks aggregated. */
+export interface HourlyBucket {
+  /** ISO timestamp of the hour start. */
+  hourStart: string;
+  /** Total trades fired in this hour. */
+  totalTrades: number;
+  /** Total buy trades in this hour. */
+  totalBuys: number;
+  /** Total sell trades in this hour. */
+  totalSells: number;
+  /** Combined realised P&L for this hour (base currency). */
+  realisedPnl: number;
+  /** BTC price at the start of the hour. */
+  openPrice: number;
+  /** BTC price at the end of the hour. */
+  closePrice: number;
+}
+
+/** Full backtest report stored as JSON in S3. */
+export interface BacktestReport {
+  backtestId: string;
+  botId: string;
+  sub: string;
+  /** ISO timestamp of the 30-day window start. */
+  windowStart: string;
+  /** ISO timestamp of the 30-day window end. */
+  windowEnd: string;
+  /** Whether the bot's configured sizing or the $1,000 AUD default was used. */
+  sizingMode: BacktestSizingMode;
+  /** Full copy of the bot configuration at submission time. */
+  botConfigSnapshot: BotRecord;
+  summary: BacktestSummary;
+  /** 720 hourly buckets covering the 30-day window. */
+  hourlyBuckets: HourlyBucket[];
+}
+
+/** DynamoDB backtest metadata record — full report lives in S3. */
+export interface BacktestMetadataRecord {
+  /** Partition key — user ID. */
+  sub: string;
+  /** Sort key — UUID. */
+  backtestId: string;
+  /** Bot this backtest belongs to. */
+  botId: string;
+  /** Current backtest lifecycle status. */
+  status: BacktestStatus;
+  /** Full S3 object key for the report — populated on completion. */
+  s3Key?: string;
+  /** Full copy of bot config at submission time. */
+  botConfigSnapshot: BotRecord;
+  /** Set to true if bot rules are edited after the test was run. */
+  configChangedSinceTest: boolean;
+  /** ISO timestamp of submission. */
+  testedAt: string;
+  /** ISO timestamp of completion. */
+  completedAt?: string;
+  /** ISO start of the 30-day price window used. */
+  windowStart: string;
+  /** ISO end of the 30-day price window used. */
+  windowEnd: string;
+  /** Error message — populated on failed status only. */
+  errorMessage?: string;
+}
+
 // ─── EventBridge Event Types ────────────────────────────────────
 
 /** EventBridge event source for the trading domain. */
@@ -264,6 +352,12 @@ export interface BotUpdatedDetail {
 export interface BotDeletedDetail {
   sub: string;
   botId: string;
-  buySubscriptionArn?: string;
-  sellSubscriptionArn?: string;
+}
+
+/** Detail payload for BacktestCompleted events. */
+export interface BacktestCompletedDetail {
+  sub: string;
+  botId: string;
+  backtestId: string;
+  status: 'completed' | 'failed';
 }

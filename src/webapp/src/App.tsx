@@ -11,8 +11,10 @@ import Portfolios from './pages/Portfolios';
 import Orderbook from './pages/Orderbook';
 import Bots from './pages/Bots';
 import BotDetail from './pages/BotDetail';
+import BotBacktest from './pages/BotBacktest';
 import BotView from './pages/BotView';
 import Leaderboard from './pages/Leaderboard';
+import TraderProfile from './pages/TraderProfile';
 import Settings from './pages/Settings';
 import ReleaseNotes from './pages/ReleaseNotes';
 import NotFound from './pages/NotFound';
@@ -38,9 +40,11 @@ export default function App() {
             <Route path="portfolios" element={<Portfolios />} />
             <Route path="orderbook" element={<Orderbook />} />
             <Route path="leaderboard" element={<Leaderboard />} />
+            <Route path="leaderboard/:username" element={<TraderProfile />} />
             <Route path="bots" element={<Bots />} />
             <Route path="bots/:pair" element={<BotDetail />} />
             <Route path="bots/view/:botId" element={<BotView />} />
+            <Route path="bots/backtest/:botId" element={<BotBacktest />} />
             <Route path="settings" element={<Settings />} />
             <Route path="release-notes" element={<ReleaseNotes />} />
             <Route path="*" element={<NotFound />} />

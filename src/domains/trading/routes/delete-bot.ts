@@ -1,11 +1,14 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, DeleteCommand, GetCommand, QueryCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, DeleteCommand, QueryCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { jsonResponse } from '../utils';
-import type { BotRecord } from '../types';
+import type { BacktestMetadataRecord } from '../types';
 import { TRADING_EVENT_SOURCE } from '../types';
 import type { BotDeletedDetail } from '../types';
+
+const s3 = new S3Client({});
 
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const eventBridge = new EventBridgeClient({});
@@ -61,9 +64,7 @@ async function deleteBotRecords(tableName: string, botId: string): Promise<void>
  * Deletes a bot by ID for the authenticated user,
  * along with all associated trade and performance records.
  *
- * Fetches the bot before deletion to capture subscription ARNs
- * for the BotDeleted event, enabling the lifecycle handler to
- * clean up the SNS subscriptions.
+ * Publishes a BotDeleted event to EventBridge for audit purposes.
  *
  * @param event - The incoming API Gateway event.
  * @returns A JSON response confirming deletion.
@@ -75,13 +76,6 @@ export async function deleteBot(event: APIGatewayProxyEvent): Promise<APIGateway
   const botId = event.pathParameters?.botId;
   if (!botId) return jsonResponse(400, { error: 'Missing botId' });
 
-  // Fetch bot before deletion to capture subscription ARNs for event
-  const existing = await ddbDoc.send(new GetCommand({
-    TableName: process.env.BOTS_TABLE_NAME!,
-    Key: { sub, botId },
-  }));
-  const bot = existing.Item as BotRecord | undefined;
-
   await ddbDoc.send(new DeleteCommand({
     TableName: process.env.BOTS_TABLE_NAME!,
     Key: { sub, botId },
@@ -92,24 +86,60 @@ export async function deleteBot(event: APIGatewayProxyEvent): Promise<APIGateway
     deleteBotRecords(process.env.BOT_PERFORMANCE_TABLE_NAME!, botId),
   ]);
 
-  // Publish BotDeleted event only if the bot existed
-  if (bot) {
+  // Clean up backtest S3 objects and DynamoDB records
+  if (process.env.BACKTESTS_TABLE_NAME) {
     try {
-      await eventBridge.send(new PutEventsCommand({
-        Entries: [{
-          Source: TRADING_EVENT_SOURCE,
-          DetailType: 'BotDeleted',
-          Detail: JSON.stringify({
-            sub,
-            botId,
-            buySubscriptionArn: bot.buySubscriptionArn,
-            sellSubscriptionArn: bot.sellSubscriptionArn,
-          } satisfies BotDeletedDetail),
-        }],
-      }));
+      let lastKey: Record<string, unknown> | undefined;
+      do {
+        const backtestResults = await ddbDoc.send(new QueryCommand({
+          TableName: process.env.BACKTESTS_TABLE_NAME,
+          IndexName: 'botId-index',
+          KeyConditionExpression: 'botId = :botId',
+          ExpressionAttributeValues: { ':botId': botId },
+          ExclusiveStartKey: lastKey,
+        }));
+
+        const backtests = (backtestResults.Items ?? []) as BacktestMetadataRecord[];
+        lastKey = backtestResults.LastEvaluatedKey as Record<string, unknown> | undefined;
+
+        for (const bt of backtests) {
+          // Delete S3 report object
+          if (bt.s3Key && process.env.BACKTEST_REPORTS_BUCKET) {
+            try {
+              await s3.send(new DeleteObjectCommand({
+                Bucket: process.env.BACKTEST_REPORTS_BUCKET,
+                Key: bt.s3Key,
+              }));
+            } catch (s3Err) {
+              console.error('Failed to delete backtest S3 object:', bt.s3Key, s3Err);
+            }
+          }
+
+          // Delete DynamoDB metadata record
+          await ddbDoc.send(new DeleteCommand({
+            TableName: process.env.BACKTESTS_TABLE_NAME!,
+            Key: { sub, backtestId: bt.backtestId },
+          }));
+        }
+      } while (lastKey);
     } catch (err) {
-      console.error('Failed to publish BotDeleted event:', err);
+      console.error('Failed to clean up backtest records:', err);
     }
+  }
+
+  try {
+    await eventBridge.send(new PutEventsCommand({
+      Entries: [{
+        Source: TRADING_EVENT_SOURCE,
+        DetailType: 'BotDeleted',
+        Detail: JSON.stringify({
+          sub,
+          botId,
+        } satisfies BotDeletedDetail),
+      }],
+    }));
+  } catch (err) {
+    console.error('Failed to publish BotDeleted event:', err);
   }
 
   return jsonResponse(200, { botId, deleted: true });

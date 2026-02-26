@@ -9,6 +9,7 @@ import { DomainPortfolioStack } from '../lib/domain-portfolio';
 import { DomainOrderbookStack } from '../lib/domain-orderbook';
 import { DomainCoreStack } from '../lib/domain-core';
 import { DomainTradingStack } from '../lib/domain-trading';
+import { DomainDemoExchangeStack } from '../lib/domain-demo-exchange';
 import { WebappStack } from '../lib/webapp';
 import { WebsiteStack } from '../lib/website';
 
@@ -77,11 +78,18 @@ class InfrastructureStack extends cdk.Stack {
       hostedZone,
     });
 
+    // Demo exchange must be created before Orderbook (orderbook proxies to it)
+    const demoExchange = new DomainDemoExchangeStack(this, `DomainDemoExchangeStack`, {
+      name,
+      environment,
+    });
+
     new DomainOrderbookStack(this, `DomainOrderbookStack`, {
       name,
       environment,
       api: restApi.api,
       authorizer: restApi.authorizer,
+      demoExchangeApi: demoExchange.api,
     });
 
     new DomainCoreStack(this, `DomainCoreStack`, {
@@ -89,6 +97,7 @@ class InfrastructureStack extends cdk.Stack {
       environment,
       api: restApi.api,
       authorizer: restApi.authorizer,
+      userPool: auth.userPool,
     });
 
     // Trading must be created before Portfolio (portfolio reads bot-performance table)

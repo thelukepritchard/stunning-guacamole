@@ -1,17 +1,62 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { jsonResponse } from '../utils';
+import { jsonResponse, DEMO_EXCHANGE_API_URL } from '../utils';
+import type { OrdersResponse, OrderResponse } from '../types';
 
 /**
- * Lists all orders.
+ * Returns the user's orders from their configured exchange.
+ * Currently all users are routed to the demo exchange.
  *
- * @param _event - The incoming API Gateway event (unused).
- * @returns A JSON response containing the list of orders.
+ * @param event - Cognito-authenticated API Gateway event.
+ * @returns Normalised JSON orders response.
  */
-export async function listOrders(_event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  return jsonResponse(200, {
-    items: [
-      { id: 'o-001', symbol: 'AAPL', side: 'buy', quantity: 10, status: 'filled' },
-      { id: 'o-002', symbol: 'TSLA', side: 'sell', quantity: 5, status: 'pending' },
-    ],
-  });
+export async function listOrders(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  const sub = event.requestContext.authorizer?.claims?.sub;
+  if (!sub) {
+    return jsonResponse(401, { error: 'Unauthorized' });
+  }
+
+  const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/orders?sub=${encodeURIComponent(sub)}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    return jsonResponse(502, { error: 'Failed to reach demo exchange' });
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Upstream error' }));
+    return jsonResponse(res.status, err);
+  }
+
+  const data = (await res.json()) as {
+    orders: Array<{
+      orderId: string;
+      pair: string;
+      side: string;
+      type: string;
+      size: number;
+      executedPrice: number;
+      total: number;
+      status: string;
+      createdAt: string;
+    }>;
+  };
+
+  const response: OrdersResponse = {
+    exchange: 'demo',
+    orders: data.orders.map((o): OrderResponse => ({
+      orderId: o.orderId,
+      pair: o.pair,
+      side: o.side,
+      type: o.type,
+      size: o.size,
+      price: o.executedPrice,
+      total: o.total,
+      status: o.status,
+      createdAt: o.createdAt,
+    })),
+  };
+
+  return jsonResponse(200, response);
 }

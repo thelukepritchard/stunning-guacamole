@@ -13,6 +13,7 @@ const mockUpdatePortfolio = jest.fn().mockResolvedValue(mockResponse);
 const mockDeletePortfolio = jest.fn().mockResolvedValue(mockResponse);
 const mockGetPortfolioPerformance = jest.fn().mockResolvedValue(mockResponse);
 const mockGetLeaderboard = jest.fn().mockResolvedValue(mockResponse);
+const mockGetTraderProfile = jest.fn().mockResolvedValue(mockResponse);
 
 jest.mock('../routes/list-portfolios', () => ({ listPortfolios: mockListPortfolios }));
 jest.mock('../routes/create-portfolio', () => ({ createPortfolio: mockCreatePortfolio }));
@@ -21,6 +22,7 @@ jest.mock('../routes/update-portfolio', () => ({ updatePortfolio: mockUpdatePort
 jest.mock('../routes/delete-portfolio', () => ({ deletePortfolio: mockDeletePortfolio }));
 jest.mock('../routes/get-portfolio-performance', () => ({ getPortfolioPerformance: mockGetPortfolioPerformance }));
 jest.mock('../routes/get-leaderboard', () => ({ getLeaderboard: mockGetLeaderboard }));
+jest.mock('../routes/get-trader-profile', () => ({ getTraderProfile: mockGetTraderProfile }));
 
 import { handler } from '../index';
 import { buildEvent } from '../../test-utils';
@@ -119,6 +121,20 @@ describe('portfolio handler', () => {
     const result = await handler(event);
 
     expect(mockGetLeaderboard).toHaveBeenCalledWith(event);
+    expect(result).toBe(mockResponse);
+  });
+
+  /** Verifies GET /portfolio/leaderboard/{username} dispatches to getTraderProfile. */
+  it('routes GET /portfolio/leaderboard/{username} to getTraderProfile', async () => {
+    const event = buildEvent({
+      httpMethod: 'GET',
+      resource: '/portfolio/leaderboard/{username}',
+      pathParameters: { username: 'alice' },
+    });
+
+    const result = await handler(event);
+
+    expect(mockGetTraderProfile).toHaveBeenCalledWith(event);
     expect(result).toBe(mockResponse);
   });
 

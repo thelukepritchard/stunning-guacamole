@@ -16,6 +16,7 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
 import { listPortfolios } from '../routes/list-portfolios';
 import { getPortfolioPerformance } from '../routes/get-portfolio-performance';
 import { getLeaderboard } from '../routes/get-leaderboard';
+import { getTraderProfile } from '../routes/get-trader-profile';
 import { createPortfolio } from '../routes/create-portfolio';
 import { getPortfolio } from '../routes/get-portfolio';
 import { updatePortfolio } from '../routes/update-portfolio';
@@ -316,6 +317,237 @@ describe('portfolio route handlers', () => {
 
       expect(result.statusCode).toBe(200);
       expect(body.items).toHaveLength(2);
+    });
+  });
+
+  /**
+   * Tests for the getTraderProfile route handler.
+   * Exercises username lookup via the username-index GSI and performance
+   * snapshot retrieval for a configurable period.
+   */
+  describe('getTraderProfile', () => {
+    /** Helper: build a mock PortfolioPerformanceRecord snapshot. */
+    function makeSnapshot(ts: string, pnl24h: number): Record<string, unknown> {
+      return {
+        sub: 'user-abc',
+        timestamp: ts,
+        activeBots: 2,
+        totalNetPnl: 1000 + pnl24h,
+        totalRealisedPnl: 800,
+        totalUnrealisedPnl: 200 + pnl24h,
+        pnl24h,
+        ttl: 9999999,
+      };
+    }
+
+    /** Verifies 200 with full profile when username and snapshots are found (default 7d period). */
+    it('returns 200 with the trader profile for the default 7d period', async () => {
+      const snap1 = makeSnapshot('2026-01-01T00:00:00Z', 50);
+      const snap2 = makeSnapshot('2026-01-02T00:00:00Z', 120);
+
+      // First QueryCommand: GSI username lookup
+      mockSend.mockResolvedValueOnce({
+        Items: [{ sub: 'user-abc', username: 'alice', createdAt: '2025-12-01T00:00:00Z' }],
+      });
+      // Second QueryCommand: performance snapshot range query
+      mockSend.mockResolvedValueOnce({ Items: [snap1, snap2] });
+
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'alice' },
+      }));
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.username).toBe('alice');
+      expect(body.createdAt).toBe('2025-12-01T00:00:00Z');
+      // Summary should reflect the latest (second) snapshot
+      expect(body.summary).not.toBeNull();
+      expect(body.summary.pnl24h).toBe(120);
+      expect(body.summary.activeBots).toBe(2);
+      expect(body.summary.lastUpdated).toBe('2026-01-02T00:00:00Z');
+      // Performance array should have both snapshots mapped to public fields
+      expect(body.performance).toHaveLength(2);
+      expect(body.performance[0].timestamp).toBe('2026-01-01T00:00:00Z');
+      expect(body.performance[1].timestamp).toBe('2026-01-02T00:00:00Z');
+      // sub must not be exposed in the response
+      expect(body.sub).toBeUndefined();
+      expect(mockSend).toHaveBeenCalledTimes(2);
+    });
+
+    /** Verifies the 24h period param is accepted and results in a DDB query. */
+    it('returns 200 for the 24h period query param', async () => {
+      mockSend.mockResolvedValueOnce({
+        Items: [{ sub: 'user-abc', username: 'alice', createdAt: '2025-12-01T00:00:00Z' }],
+      });
+      mockSend.mockResolvedValueOnce({ Items: [makeSnapshot('2026-01-07T12:00:00Z', 30)] });
+
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'alice' },
+        queryStringParameters: { period: '24h' },
+      }));
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.performance).toHaveLength(1);
+      expect(mockSend).toHaveBeenCalledTimes(2);
+    });
+
+    /** Verifies the 30d period param is accepted. */
+    it('returns 200 for the 30d period query param', async () => {
+      mockSend.mockResolvedValueOnce({
+        Items: [{ sub: 'user-abc', username: 'alice', createdAt: '2025-12-01T00:00:00Z' }],
+      });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'alice' },
+        queryStringParameters: { period: '30d' },
+      }));
+
+      expect(result.statusCode).toBe(200);
+      expect(mockSend).toHaveBeenCalledTimes(2);
+    });
+
+    /** Verifies summary is null when no performance snapshots exist. */
+    it('returns summary as null when the trader has no performance snapshots', async () => {
+      mockSend.mockResolvedValueOnce({
+        Items: [{ sub: 'user-abc', username: 'alice', createdAt: '2025-12-01T00:00:00Z' }],
+      });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'alice' },
+      }));
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.summary).toBeNull();
+      expect(body.performance).toEqual([]);
+    });
+
+    /** Verifies undefined Items on the performance query is handled gracefully. */
+    it('handles undefined Items from the performance query as an empty array', async () => {
+      mockSend.mockResolvedValueOnce({
+        Items: [{ sub: 'user-abc', username: 'alice', createdAt: '2025-12-01T00:00:00Z' }],
+      });
+      mockSend.mockResolvedValueOnce({ Items: undefined });
+
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'alice' },
+      }));
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.summary).toBeNull();
+      expect(body.performance).toEqual([]);
+    });
+
+    /** Verifies 404 is returned when the GSI returns no matching user. */
+    it('returns 404 when the trader username does not exist', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'ghost' },
+      }));
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(404);
+      expect(body.error).toBe('Trader not found');
+      // Should not issue a second DDB call for performance
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+
+    /** Verifies 404 when the GSI Items array is undefined. */
+    it('returns 404 when the GSI query returns undefined Items', async () => {
+      mockSend.mockResolvedValueOnce({ Items: undefined });
+
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'ghost' },
+      }));
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(404);
+      expect(body.error).toBe('Trader not found');
+    });
+
+    /** Verifies 400 is returned when the username path param is missing. */
+    it('returns 400 when username path param is missing', async () => {
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: null,
+      }));
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(400);
+      expect(body.error).toBe('Missing username');
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    /** Verifies 400 is returned for an unrecognised period value. */
+    it('returns 400 for an invalid period query param', async () => {
+      const result = await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'alice' },
+        queryStringParameters: { period: 'bad_period' },
+      }));
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(400);
+      expect(body.error).toContain('Invalid period');
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    /** Verifies the GSI QueryCommand uses the username-index and correct expression. */
+    it('issues the GSI QueryCommand with the correct username-index parameters', async () => {
+      const { QueryCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as {
+        QueryCommand: jest.Mock;
+      };
+
+      mockSend.mockResolvedValueOnce({
+        Items: [{ sub: 'user-abc', username: 'alice', createdAt: '2025-12-01T00:00:00Z' }],
+      });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'alice' },
+      }));
+
+      // First call is the GSI lookup
+      const firstCall = QueryCommand.mock.calls[0][0];
+      expect(firstCall.IndexName).toBe('username-index');
+      expect(firstCall.ExpressionAttributeValues[':username']).toBe('alice');
+      expect(firstCall.Limit).toBe(1);
+    });
+
+    /** Verifies the performance QueryCommand uses the caller's sub from the GSI result. */
+    it('queries performance snapshots using the sub resolved from the GSI', async () => {
+      const { QueryCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as {
+        QueryCommand: jest.Mock;
+      };
+
+      mockSend.mockResolvedValueOnce({
+        Items: [{ sub: 'user-xyz', username: 'bob', createdAt: '2025-11-01T00:00:00Z' }],
+      });
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      await getTraderProfile(buildRouteEvent({
+        resource: '/portfolio/leaderboard/{username}',
+        pathParameters: { username: 'bob' },
+      }));
+
+      // Second call is the performance range query
+      const secondCall = QueryCommand.mock.calls[1][0];
+      expect(secondCall.ExpressionAttributeValues[':sub']).toBe('user-xyz');
+      expect(secondCall.TableName).toBe('PortfolioPerformanceTable');
+      expect(secondCall.ScanIndexForward).toBe(true);
     });
   });
 

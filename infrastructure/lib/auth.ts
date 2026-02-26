@@ -27,7 +27,7 @@ export interface AuthStackProps extends cdk.NestedStackProps {
  * with a username-index GSI for uniqueness checks), a pre-sign-up
  * Lambda trigger that validates username format and uniqueness, and
  * a post-confirmation Lambda trigger that creates the portfolio entry
- * with the user's chosen username.
+ * with the user's chosen username and a default starter bot in draft mode.
  */
 export class AuthStack extends cdk.NestedStack {
 
@@ -57,7 +57,7 @@ export class AuthStack extends cdk.NestedStack {
     this.portfolioTable.addGlobalSecondaryIndex({
       indexName: 'username-index',
       partitionKey: { name: 'username', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.KEYS_ONLY,
+      projectionType: dynamodb.ProjectionType.ALL,
     });
 
     // ─── Pre-Sign-Up Lambda ────────────────────────────────────────
@@ -76,19 +76,28 @@ export class AuthStack extends cdk.NestedStack {
     this.portfolioTable.grantReadData(preSignUpHandler);
 
     // ─── Post-Confirmation Lambda ─────────────────────────────────
+    // Also writes a default starter bot to the trading bots table.
+    // The table name is constructed from the naming convention to avoid
+    // a circular dependency (AuthStack is created before DomainTradingStack).
+
+    const botsTableName = `${props.name}-${props.environment}-trading-bots`;
+    const botsTableRef = dynamodb.Table.fromTableName(this, 'BotsTableRef', botsTableName);
 
     const postConfirmationHandler = new NodejsFunction(this, 'PostConfirmationHandler', {
       functionName: `${props.name}-${props.environment}-portfolio-post-confirmation`,
       runtime: lambda.Runtime.NODEJS_24_X,
       memorySize: 256,
+      timeout: cdk.Duration.seconds(10),
       entry: path.join(__dirname, '../../src/domains/portfolio/async/post-confirmation.ts'),
       handler: 'handler',
       environment: {
         PORTFOLIO_TABLE_NAME: this.portfolioTable.tableName,
+        BOTS_TABLE_NAME: botsTableName,
       },
     });
 
     this.portfolioTable.grantWriteData(postConfirmationHandler);
+    botsTableRef.grantWriteData(postConfirmationHandler);
 
     // ─── Cognito User Pool ────────────────────────────────────────
 

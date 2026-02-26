@@ -19,14 +19,20 @@ export interface DomainOrderbookStackProps extends cdk.NestedStackProps {
 
   /** The Cognito authorizer to protect the /orderbook endpoint. */
   authorizer: apigateway.CognitoUserPoolsAuthorizer;
+
+  /** The demo exchange REST API — used to build the proxy URL for demo-mode users. */
+  demoExchangeApi: apigateway.RestApi;
 }
 
 /**
  * Orderbook domain stack.
  *
- * Creates a Lambda function (bundled from `src/domains/orderbook/index.ts`)
- * and wires it as a Cognito-protected endpoint under `/orderbook` on the shared
- * REST API with explicit GET/POST/PUT/DELETE methods.
+ * Acts as the exchange proxy layer. All exchange interaction from the
+ * frontend and other domains is routed through the Orderbook, which
+ * resolves the user's configured exchange, translates the request, and
+ * returns normalised data.
+ *
+ * For now, all users are routed to the demo exchange.
  */
 export class DomainOrderbookStack extends cdk.NestedStack {
   constructor(scope: Construct, id: string, props: DomainOrderbookStackProps) {
@@ -38,8 +44,12 @@ export class DomainOrderbookStack extends cdk.NestedStack {
       functionName: `${props.name}-${props.environment}-orderbook-handler`,
       runtime: lambda.Runtime.NODEJS_24_X,
       memorySize: 256,
+      timeout: cdk.Duration.seconds(15),
       entry: path.join(__dirname, '../../src/domains/orderbook/index.ts'),
       handler: 'handler',
+      environment: {
+        DEMO_EXCHANGE_API_URL: props.demoExchangeApi.url,
+      },
     });
 
     const integration = new apigateway.LambdaIntegration(handler);
@@ -58,19 +68,24 @@ export class DomainOrderbookStack extends cdk.NestedStack {
     const resource = props.api.root.addResource('orderbook');
     resource.addCorsPreflight(corsOptions);
 
-    // GET /orderbook — list orders
-    resource.addMethod('GET', integration, methodOptions);
-    // POST /orderbook — place order
-    resource.addMethod('POST', integration, methodOptions);
+    // GET /orderbook/balance — user's exchange balance
+    const balanceResource = resource.addResource('balance');
+    balanceResource.addCorsPreflight(corsOptions);
+    balanceResource.addMethod('GET', integration, methodOptions);
 
-    // /orderbook/{id}
-    const idResource = resource.addResource('{id}');
-    idResource.addCorsPreflight(corsOptions);
-    // GET /orderbook/{id} — get single order
-    idResource.addMethod('GET', integration, methodOptions);
-    // PUT /orderbook/{id} — update order
-    idResource.addMethod('PUT', integration, methodOptions);
-    // DELETE /orderbook/{id} — cancel order
-    idResource.addMethod('DELETE', integration, methodOptions);
+    // GET /orderbook/pairs — available trading pairs
+    const pairsResource = resource.addResource('pairs');
+    pairsResource.addCorsPreflight(corsOptions);
+    pairsResource.addMethod('GET', integration, methodOptions);
+
+    // GET /orderbook/orders — open orders
+    const ordersResource = resource.addResource('orders');
+    ordersResource.addCorsPreflight(corsOptions);
+    ordersResource.addMethod('GET', integration, methodOptions);
+
+    // DELETE /orderbook/orders/{orderId} — cancel an order
+    const orderIdResource = ordersResource.addResource('{orderId}');
+    orderIdResource.addCorsPreflight(corsOptions);
+    orderIdResource.addMethod('DELETE', integration, methodOptions);
   }
 }

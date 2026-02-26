@@ -7,42 +7,45 @@ import type { BotAction, BotRecord, IndicatorSnapshot, SizingConfig, TradeTrigge
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 /**
- * Looks up a bot by subscription ARN across both GSIs (buySubscriptionArn-index
- * and sellSubscriptionArn-index) in parallel. Returns the bot's key and the
- * action associated with the matched subscription.
+ * Queries all active bots for a given trading pair using the pair-status GSI.
+ * Returns fully-hydrated bot records via strongly consistent reads.
  *
- * @param subscriptionArn - The SNS subscription ARN from the event.
- * @returns The bot key (sub + botId) and matched action, or undefined if not found.
+ * @param pair - The trading pair (e.g. "BTC/USDT").
+ * @returns All active bot records for the pair.
  */
-async function lookupBotBySubscriptionArn(
-  subscriptionArn: string,
-): Promise<{ sub: string; botId: string; action: BotAction } | undefined> {
-  const [buyResult, sellResult] = await Promise.all([
-    ddbDoc.send(new QueryCommand({
+async function queryActiveBotsByPair(pair: string): Promise<BotRecord[]> {
+  const keys: { sub: string; botId: string }[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  do {
+    const result = await ddbDoc.send(new QueryCommand({
       TableName: process.env.BOTS_TABLE_NAME!,
-      IndexName: 'buySubscriptionArn-index',
-      KeyConditionExpression: 'buySubscriptionArn = :arn',
-      ExpressionAttributeValues: { ':arn': subscriptionArn },
+      IndexName: 'pair-status-index',
+      KeyConditionExpression: '#pair = :pair AND #status = :active',
+      ExpressionAttributeNames: { '#pair': 'pair', '#status': 'status', '#sub': 'sub' },
+      ExpressionAttributeValues: { ':pair': pair, ':active': 'active' },
       ProjectionExpression: '#sub, botId',
-      ExpressionAttributeNames: { '#sub': 'sub' },
-    })),
-    ddbDoc.send(new QueryCommand({
+      ExclusiveStartKey: lastKey,
+    }));
+    keys.push(...(result.Items as { sub: string; botId: string }[] ?? []));
+    lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
+
+  // Fetch full records with strongly consistent reads for latest execution state
+  const bots: BotRecord[] = [];
+  for (const key of keys) {
+    const result = await ddbDoc.send(new GetCommand({
       TableName: process.env.BOTS_TABLE_NAME!,
-      IndexName: 'sellSubscriptionArn-index',
-      KeyConditionExpression: 'sellSubscriptionArn = :arn',
-      ExpressionAttributeValues: { ':arn': subscriptionArn },
-      ProjectionExpression: '#sub, botId',
-      ExpressionAttributeNames: { '#sub': 'sub' },
-    })),
-  ]);
+      Key: { sub: key.sub, botId: key.botId },
+      ConsistentRead: true,
+    }));
+    const bot = result.Item as BotRecord | undefined;
+    if (bot && bot.status === 'active') {
+      bots.push(bot);
+    }
+  }
 
-  const buyItem = buyResult.Items?.[0] as { sub: string; botId: string } | undefined;
-  if (buyItem) return { ...buyItem, action: 'buy' };
-
-  const sellItem = sellResult.Items?.[0] as { sub: string; botId: string } | undefined;
-  if (sellItem) return { ...sellItem, action: 'sell' };
-
-  return undefined;
+  return bots;
 }
 
 /**
@@ -316,13 +319,12 @@ async function executeConditionCooldown(bot: BotRecord, action: BotAction, indic
 }
 
 /**
- * SNS-triggered Lambda that evaluates a bot's buy or sell rule tree
- * against incoming indicator data. Each SNS subscription corresponds
- * to a single action (buy or sell), with a filter policy tailored to
- * that action's rules to reduce false positive invocations.
+ * SNS-triggered Lambda that evaluates all active bots for the received
+ * trading pair against incoming indicator data. A single static SNS
+ * subscription delivers every indicator tick to this handler, which then
+ * fans out to all active bots for the pair.
  *
- * The subscription ARN is used to look up both the bot and the action
- * type via dedicated GSIs (buySubscriptionArn-index, sellSubscriptionArn-index).
+ * For each bot, both buy and sell actions are evaluated independently.
  *
  * Execution behaviour depends on the bot's configured execution mode:
  *
@@ -340,38 +342,33 @@ async function executeConditionCooldown(bot: BotRecord, action: BotAction, indic
 export async function handler(event: SNSEvent): Promise<void> {
   for (const record of event.Records) {
     try {
-      const subscriptionArn = record.EventSubscriptionArn;
       const indicators: IndicatorSnapshot = JSON.parse(record.Sns.Message);
-
-      // Look up bot and action by subscription ARN (GSIs are eventually consistent)
-      const lookup = await lookupBotBySubscriptionArn(subscriptionArn);
-      if (!lookup) {
-        console.log('Bot not found for subscription:', { subscriptionArn });
+      const pair = record.Sns.MessageAttributes?.pair?.Value;
+      if (!pair) {
+        console.log('No pair attribute in SNS message, skipping');
         continue;
       }
 
-      // Fetch full bot with strongly consistent read to get latest execution state
-      const botResult = await ddbDoc.send(new GetCommand({
-        TableName: process.env.BOTS_TABLE_NAME!,
-        Key: { sub: lookup.sub, botId: lookup.botId },
-        ConsistentRead: true,
-      }));
+      const bots = await queryActiveBotsByPair(pair);
+      console.log(`Processing ${bots.length} active bots for pair ${pair}`);
 
-      const bot = botResult.Item as BotRecord | undefined;
-      if (!bot || bot.status !== 'active') {
-        console.log('Bot not found or not active:', { subscriptionArn });
-        continue;
-      }
-
-      switch (bot.executionMode) {
-        case 'once_and_wait':
-          await executeOnceAndWait(bot, lookup.action, indicators);
-          break;
-        case 'condition_cooldown':
-          await executeConditionCooldown(bot, lookup.action, indicators);
-          break;
-        default:
-          console.log('Unknown execution mode:', { botId: bot.botId, executionMode: bot.executionMode });
+      for (const bot of bots) {
+        try {
+          switch (bot.executionMode) {
+            case 'once_and_wait':
+              await executeOnceAndWait(bot, 'buy', indicators);
+              await executeOnceAndWait(bot, 'sell', indicators);
+              break;
+            case 'condition_cooldown':
+              await executeConditionCooldown(bot, 'buy', indicators);
+              await executeConditionCooldown(bot, 'sell', indicators);
+              break;
+            default:
+              console.log('Unknown execution mode:', { botId: bot.botId, executionMode: bot.executionMode });
+          }
+        } catch (err) {
+          console.error('Error processing bot:', { botId: bot.botId }, err);
+        }
       }
     } catch (err) {
       // Log and continue — do not throw so SNS does not retry the entire batch
