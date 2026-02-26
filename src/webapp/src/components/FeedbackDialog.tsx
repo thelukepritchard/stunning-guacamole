@@ -40,7 +40,7 @@ export default function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
       const session = await fetchAuthSession();
       const token = session.tokens?.idToken?.toString();
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/core/feedback`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/feedback`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

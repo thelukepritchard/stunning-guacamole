@@ -70,7 +70,7 @@ function formatAxisDate(ts: string, p: Period): string {
 /**
  * Public trader profile page showing portfolio stats and performance chart.
  *
- * Fetches data from GET /portfolio/leaderboard/{username} and displays
+ * Fetches data from GET /analytics/leaderboard/{username} and displays
  * summary metrics with a P&L chart over time.
  *
  * Route: /leaderboard/:username
@@ -94,7 +94,7 @@ export default function TraderProfile() {
       setError(null);
       const data = await request<TraderProfileData>(
         'GET',
-        `/portfolio/leaderboard/${encodeURIComponent(username)}?period=${period}`,
+        `/analytics/leaderboard/${encodeURIComponent(username)}?period=${period}`,
       );
       setProfile(data);
     } catch (err) {

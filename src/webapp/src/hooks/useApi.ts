@@ -14,7 +14,7 @@ export function useApi() {
    * Makes an authenticated API request to the backend.
    *
    * @param method - HTTP method.
-   * @param path - API path (e.g. '/trading/bots').
+   * @param path - API path (e.g. '/bots').
    * @param body - Optional request body (will be JSON-stringified).
    * @returns The parsed JSON response.
    */

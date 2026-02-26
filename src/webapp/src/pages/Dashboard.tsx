@@ -134,11 +134,11 @@ export default function Dashboard() {
       setError(null);
 
       const [balanceRes, botsRes, perfRes, ordersRes, tradesRes] = await Promise.all([
-        request<BalanceResponse>('GET', '/orderbook/balance'),
-        request<{ items: ApiBotRecord[] }>('GET', '/trading/bots'),
-        request<{ items: PerformanceSnapshot[] }>('GET', '/portfolio/performance?period=30d'),
-        request<{ exchange: string; orders: OrderResponse[] }>('GET', '/orderbook/orders'),
-        request<{ items: ApiTradeRecord[] }>('GET', '/trading/trades?limit=10'),
+        request<BalanceResponse>('GET', '/exchange/balance'),
+        request<{ items: ApiBotRecord[] }>('GET', '/bots'),
+        request<{ items: PerformanceSnapshot[] }>('GET', '/analytics/performance?period=30d'),
+        request<{ exchange: string; orders: OrderResponse[] }>('GET', '/exchange/orders'),
+        request<{ items: ApiTradeRecord[] }>('GET', '/trades?limit=10'),
       ]);
 
       setBalance(balanceRes);

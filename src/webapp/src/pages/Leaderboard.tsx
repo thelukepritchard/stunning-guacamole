@@ -43,7 +43,7 @@ const MEDAL_COLORS: Record<number, string> = {
 /**
  * Leaderboard page showing top traders ranked by 24-hour P&L.
  *
- * Fetches data from GET /portfolio/leaderboard and displays a ranked
+ * Fetches data from GET /analytics/leaderboard and displays a ranked
  * table with user avatars, active bot counts, and P&L figures.
  *
  * Route: /leaderboard
@@ -63,7 +63,7 @@ export default function Leaderboard() {
       setError(null);
       const data = await request<{ items: LeaderboardEntry[] }>(
         'GET',
-        '/portfolio/leaderboard?limit=50',
+        '/analytics/leaderboard?limit=50',
       );
       setEntries(data.items);
     } catch (err) {

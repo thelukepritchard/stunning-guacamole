@@ -79,8 +79,8 @@ export default function BotDetail() {
       setError(null);
 
       const [botsData, tradesData] = await Promise.all([
-        request<{ items: ApiBotRecord[] }>('GET', '/trading/bots'),
-        request<{ items: ApiTradeRecord[] }>('GET', '/trading/trades?limit=100'),
+        request<{ items: ApiBotRecord[] }>('GET', '/bots'),
+        request<{ items: ApiTradeRecord[] }>('GET', '/trades?limit=100'),
       ]);
 
       // Filter bots and trades for this pair

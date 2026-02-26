@@ -36,7 +36,7 @@ export default function BotBacktest() {
     if (!botId) return;
     try {
       setLoading(true);
-      const data = await request<ApiBotRecord>('GET', `/trading/bots/${botId}`);
+      const data = await request<ApiBotRecord>('GET', `/bots/${botId}`);
       setBot(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load bot');

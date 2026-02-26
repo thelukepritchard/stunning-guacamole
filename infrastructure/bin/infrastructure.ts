@@ -5,11 +5,13 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import { Construct } from 'constructs';
 import { AuthStack } from '../lib/auth';
 import { RestApiStack } from '../lib/rest-api';
-import { DomainPortfolioStack } from '../lib/domain-portfolio';
-import { DomainOrderbookStack } from '../lib/domain-orderbook';
-import { DomainCoreStack } from '../lib/domain-core';
-import { DomainTradingStack } from '../lib/domain-trading';
-import { DomainDemoExchangeStack } from '../lib/domain-demo-exchange';
+import { DomainBotsStack } from '../lib/domain-bots';
+import { DomainMarketStack } from '../lib/domain-market';
+import { DomainExecutorStack } from '../lib/domain-executor';
+import { DomainExchangeStack } from '../lib/domain-exchange';
+import { DomainAnalyticsStack } from '../lib/domain-analytics';
+import { DomainBacktestingStack } from '../lib/domain-backtesting';
+import { DomainAccountStack } from '../lib/domain-account';
 import { WebappStack } from '../lib/webapp';
 import { WebsiteStack } from '../lib/website';
 
@@ -33,8 +35,9 @@ const regionalCertificateArn = 'arn:aws:acm:ap-southeast-2:090517336066:certific
  * Root stack that composes all nested stacks.
  *
  * Dependency flow:
- *   AuthStack -> RestApiStack -> Trading -> Portfolio (+ Orderbook, Core)
- *   Portfolio depends on Auth (portfolioTable) and Trading (botPerformanceTable)
+ *   AuthStack -> RestApiStack -> Exchange, Bots -> Market -> Executor
+ *   -> Backtesting (needs bots + price history) -> Analytics (needs bots + trades + price history)
+ *   -> Account (references all tables by name)
  *   WebappStack, WebsiteStack (independent)
  */
 class InfrastructureStack extends cdk.Stack {
@@ -78,21 +81,66 @@ class InfrastructureStack extends cdk.Stack {
       hostedZone,
     });
 
-    // Demo exchange must be created before Orderbook (orderbook proxies to it)
-    const demoExchange = new DomainDemoExchangeStack(this, `DomainDemoExchangeStack`, {
-      name,
-      environment,
-    });
+    // ─── Domain Stacks ─────────────────────────────────────────────
 
-    new DomainOrderbookStack(this, `DomainOrderbookStack`, {
+    // Exchange must be created first (exchange proxy needs demo exchange URL)
+    const exchange = new DomainExchangeStack(this, `DomainExchangeStack`, {
       name,
       environment,
       api: restApi.api,
       authorizer: restApi.authorizer,
-      demoExchangeApi: demoExchange.api,
     });
 
-    new DomainCoreStack(this, `DomainCoreStack`, {
+    // Bots — bot CRUD + settings
+    const bots = new DomainBotsStack(this, `DomainBotsStack`, {
+      name,
+      environment,
+      api: restApi.api,
+      authorizer: restApi.authorizer,
+    });
+
+    // Market — price ingestion + SNS distribution
+    const market = new DomainMarketStack(this, `DomainMarketStack`, {
+      name,
+      environment,
+      api: restApi.api,
+      authorizer: restApi.authorizer,
+    });
+
+    // Executor — rule evaluation + trades (depends on bots table + market SNS topic)
+    const executor = new DomainExecutorStack(this, `DomainExecutorStack`, {
+      name,
+      environment,
+      api: restApi.api,
+      authorizer: restApi.authorizer,
+      botsTable: bots.botsTable,
+      indicatorsTopic: market.indicatorsTopic,
+    });
+
+    // Backtesting — backtest workflow (depends on bots table + price history table)
+    new DomainBacktestingStack(this, `DomainBacktestingStack`, {
+      name,
+      environment,
+      api: restApi.api,
+      authorizer: restApi.authorizer,
+      botsTable: bots.botsTable,
+      priceHistoryTable: market.priceHistoryTable,
+    });
+
+    // Analytics — performance tracking + leaderboard (depends on bots, trades, price history, portfolio)
+    new DomainAnalyticsStack(this, `DomainAnalyticsStack`, {
+      name,
+      environment,
+      api: restApi.api,
+      authorizer: restApi.authorizer,
+      portfolioTable: auth.portfolioTable,
+      botsTable: bots.botsTable,
+      tradesTable: executor.tradesTable,
+      priceHistoryTable: market.priceHistoryTable,
+    });
+
+    // Account — feedback + account deletion (references all tables by name)
+    new DomainAccountStack(this, `DomainAccountStack`, {
       name,
       environment,
       api: restApi.api,
@@ -100,22 +148,7 @@ class InfrastructureStack extends cdk.Stack {
       userPool: auth.userPool,
     });
 
-    // Trading must be created before Portfolio (portfolio reads bot-performance table)
-    const trading = new DomainTradingStack(this, `DomainTradingStack`, {
-      name,
-      environment,
-      api: restApi.api,
-      authorizer: restApi.authorizer,
-    });
-
-    new DomainPortfolioStack(this, `DomainPortfolioStack`, {
-      name,
-      environment,
-      api: restApi.api,
-      authorizer: restApi.authorizer,
-      portfolioTable: auth.portfolioTable,
-      botPerformanceTable: trading.botPerformanceTable,
-    });
+    // ─── Frontend Stacks ───────────────────────────────────────────
 
     new WebappStack(this, `WebappStack`, {
       name,

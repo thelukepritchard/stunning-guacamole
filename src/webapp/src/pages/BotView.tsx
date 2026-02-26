@@ -95,8 +95,8 @@ export default function BotView() {
       setLoading(true);
       setError(null);
       const [botData, tradesData] = await Promise.all([
-        request<ApiBotRecord>('GET', `/trading/bots/${botId}`),
-        request<{ items: ApiTradeRecord[] }>('GET', `/trading/trades/${botId}?limit=200`),
+        request<ApiBotRecord>('GET', `/bots/${botId}`),
+        request<{ items: ApiTradeRecord[] }>('GET', `/trades/${botId}?limit=200`),
       ]);
       setBot(botData);
       setTrades(tradesData.items);
@@ -114,7 +114,7 @@ export default function BotView() {
       const pairParam = bot.pair.replace('/', '-');
       const data = await request<{ items: PriceHistoryItem[] }>(
         'GET',
-        `/trading/prices/${pairParam}?period=${pricePeriod}`,
+        `/market/prices/${pairParam}?period=${pricePeriod}`,
       );
       setPriceHistory(data.items);
     } catch (err) {
@@ -128,7 +128,7 @@ export default function BotView() {
     try {
       const data = await request<{ items: { netPnl: number }[] }>(
         'GET',
-        `/trading/bots/${botId}/performance?period=7d`,
+        `/analytics/bots/${botId}/performance?period=7d`,
       );
       setPnlSparkline(data.items.map((p) => p.netPnl));
     } catch {

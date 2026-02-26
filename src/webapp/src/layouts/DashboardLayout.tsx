@@ -70,7 +70,7 @@ export default function DashboardLayout() {
   /** Fetches trading settings to determine if the user is in demo mode. */
   const checkDemoMode = useCallback(async () => {
     try {
-      const settings = await request<{ exchange: string }>('GET', '/trading/settings');
+      const settings = await request<{ exchange: string }>('GET', '/settings');
       setIsDemoMode(settings.exchange === 'demo');
     } catch {
       setIsDemoMode(true);

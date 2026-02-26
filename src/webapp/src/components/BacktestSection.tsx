@@ -119,7 +119,7 @@ export default function BacktestSection({ botId }: BacktestSectionProps) {
     try {
       const data = await request<BacktestMetadata[]>(
         'GET',
-        `/trading/bots/${botId}/backtests`,
+        `/backtests/${botId}`,
       );
       setBacktests(data);
       return data;
@@ -134,7 +134,7 @@ export default function BacktestSection({ botId }: BacktestSectionProps) {
     try {
       const data = await request<BacktestMetadata>(
         'GET',
-        `/trading/bots/${botId}/backtests/latest`,
+        `/backtests/${botId}/latest`,
       );
       return data;
     } catch {
@@ -148,7 +148,7 @@ export default function BacktestSection({ botId }: BacktestSectionProps) {
     try {
       const data = await request<BacktestReportResponse>(
         'GET',
-        `/trading/bots/${botId}/backtests/${backtestId}`,
+        `/backtests/${botId}/${backtestId}`,
       );
       setSelectedBacktest(data);
     } catch (err) {
@@ -164,7 +164,7 @@ export default function BacktestSection({ botId }: BacktestSectionProps) {
     try {
       const result = await request<{ backtestId: string; status: string }>(
         'POST',
-        `/trading/bots/${botId}/backtests`,
+        `/backtests/${botId}`,
       );
       // Refresh list and start polling
       await fetchBacktests();

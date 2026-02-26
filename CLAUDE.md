@@ -16,57 +16,71 @@ src/
 ├── webapp/               # Vite + React 19 authenticated dashboard (Cognito-gated)
 ├── website/              # Vite + React 19 public marketing site
 └── domains/              # Backend domain logic (Lambda handlers)
-    ├── portfolio/        # Portfolio domain — user portfolios, performance tracking, leaderboard
+    ├── shared/           # Cross-domain shared code
+    │   ├── types.ts      # All shared types + EventBridge event types + constants
+    │   ├── indicators.ts # Technical indicator calculations (SMA, EMA, RSI, MACD, BB)
+    │   └── rule-evaluator.ts  # Recursive rule tree evaluator
+    ├── bots/             # Bots domain — bot CRUD + user settings
     │   ├── index.ts      # Lambda entry point + route dispatch
-    │   ├── types.ts      # Shared types (PortfolioRecord, PortfolioPerformanceRecord)
     │   ├── utils.ts      # jsonResponse helper & RouteHandler type
-    │   ├── routes/       # API route handlers (portfolio, performance, leaderboard)
-    │   └── async/        # Event-driven handlers
-    │       ├── pre-signup.ts                  # Cognito pre-sign-up trigger -> validate username uniqueness
-    │       ├── post-confirmation.ts           # Cognito post-confirmation trigger -> create portfolio entry with username + default starter bot
-    │       └── portfolio-performance-recorder.ts # EventBridge 5-min schedule -> aggregated P&L snapshots
-    ├── demo-exchange/    # Demo exchange domain — simulated exchange for demo-mode users
+    │   └── routes/       # API route handlers (CRUD bots, settings, exchange options)
+    ├── market/           # Market domain — price data ingestion + distribution
     │   ├── index.ts      # Lambda entry point + route dispatch
-    │   ├── types.ts      # Shared types (DemoBalanceRecord, DemoOrderRecord, DemoPair) + constants
     │   ├── utils.ts      # jsonResponse helper & RouteHandler type
-    │   └── routes/       # API route handlers (balance, pairs, orders)
-    ├── orderbook/        # Orderbook domain — exchange proxy layer, normalises exchange responses
+    │   ├── routes/       # API route handlers (price history)
+    │   └── async/
+    │       └── price-publisher.ts         # EventBridge 1-min schedule -> Binance -> SNS + price history DynamoDB
+    ├── executor/         # Executor domain — rule evaluation + trade execution
     │   ├── index.ts      # Lambda entry point + route dispatch
-    │   ├── types.ts      # Normalised response types (BalanceResponse, PairsResponse, OrdersResponse)
+    │   ├── utils.ts      # jsonResponse helper & RouteHandler type
+    │   ├── routes/       # API route handlers (list trades)
+    │   └── async/
+    │       └── bot-executor.ts            # SNS -> query active bots by pair -> evaluate rules -> trade records
+    ├── exchange/         # Exchange domain — exchange proxy + demo exchange
+    │   ├── index.ts      # Lambda entry point (public proxy) + route dispatch
     │   ├── utils.ts      # jsonResponse helper, RouteHandler type, DEMO_EXCHANGE_API_URL
-    │   └── routes/       # API route handlers (balance, pairs, orders, cancel) — proxies to demo exchange
-    ├── core/             # Core domain — cross-cutting platform features
-    │   ├── index.ts
-    │   ├── utils.ts
-    │   └── routes/
-    └── trading/          # Trading domain — bots, indicators, trade signals
+    │   ├── routes/       # API route handlers (balance, pairs, orders, cancel) — proxies to demo exchange
+    │   └── demo/         # Internal demo exchange (unauthenticated regional API)
+    │       ├── index.ts  # Lambda entry point + route dispatch
+    │       ├── utils.ts  # jsonResponse helper
+    │       └── routes/   # API route handlers (balance, pairs, orders)
+    ├── analytics/        # Analytics domain — performance tracking + leaderboard
+    │   ├── index.ts      # Lambda entry point + route dispatch
+    │   ├── utils.ts      # jsonResponse helper & RouteHandler type
+    │   ├── routes/       # API route handlers (portfolio performance, bot performance, leaderboard, trader profile)
+    │   └── async/
+    │       ├── bot-performance-recorder.ts       # EventBridge 5-min schedule -> per-bot P&L snapshots
+    │       └── portfolio-performance-recorder.ts  # EventBridge 5-min schedule -> aggregated portfolio P&L snapshots
+    ├── backtesting/      # Backtesting domain — backtest workflow
+    │   ├── index.ts      # Lambda entry point + route dispatch
+    │   ├── utils.ts      # jsonResponse helper & RouteHandler type
+    │   ├── routes/       # API route handlers (submit, list, get backtest + latest)
+    │   └── async/
+    │       ├── backtest-validate.ts       # Step Functions step 1 -> validate bot + snapshot config
+    │       ├── backtest-engine.ts         # Step Functions step 3 -> hourly bucket replay engine
+    │       └── backtest-write-report.ts   # Step Functions step 4 -> write report to S3 + DynamoDB
+    └── account/          # Account domain — user account management
         ├── index.ts      # Lambda entry point + route dispatch
         ├── utils.ts      # jsonResponse helper & RouteHandler type
-        ├── types.ts      # Shared types (BotRecord, TradeRecord, SizingConfig, StopLossConfig, TakeProfitConfig, PriceHistoryRecord, BotPerformanceRecord, IndicatorSnapshot, BacktestMetadataRecord, BacktestReport) + EventBridge event types
-        ├── indicators.ts # Technical indicator calculations (SMA, EMA, RSI, MACD, BB)
-        ├── rule-evaluator.ts  # Recursive rule tree evaluator
-        ├── routes/       # API route handlers (CRUD bots + trades + price history + bot performance + exchange configs + backtests), publish EventBridge events
-        └── async/        # Event-driven handlers
-            ├── price-publisher.ts         # EventBridge schedule -> Binance -> SNS + price history DynamoDB
-            ├── bot-executor.ts            # SNS -> query active bots by pair -> evaluate all rules -> trade records
-            ├── bot-performance-recorder.ts # EventBridge 5-min schedule -> P&L snapshots
-            ├── backtest-validate.ts       # Step Functions step 1 -> validate bot + snapshot config
-            ├── backtest-engine.ts         # Step Functions step 3 -> hourly bucket replay engine
-            └── backtest-write-report.ts   # Step Functions step 4 -> write report to S3 + DynamoDB
+        ├── routes/       # API route handlers (feedback, account deletion)
+        └── async/
+            ├── pre-signup.ts              # Cognito pre-sign-up trigger -> validate username uniqueness
+            └── post-confirmation.ts       # Cognito post-confirmation trigger -> create portfolio entry + default bot
 
 infrastructure/           # AWS CDK v2 project (separate package)
 ├── bin/infrastructure.ts # CDK app entry point
 └── lib/
-    ├── auth.ts           # Cognito User Pool + Client + Portfolio table (with username GSI) + pre-signup + post-confirmation triggers (AuthStack)
-    ├── rest-api.ts       # API Gateway REST API + Cognito Authorizer (RestApiStack)
-    ├── domain-portfolio.ts   # Portfolio Lambda (2 functions) + DynamoDB (portfolio-performance) + EventBridge 5-min schedule + API routes (DomainPortfolioStack)
-    ├── domain-demo-exchange.ts # Demo Exchange Lambda + separate REST API (unauthenticated) + DynamoDB (balances + orders) (DomainDemoExchangeStack)
-    ├── domain-orderbook.ts   # Orderbook Lambda + API routes + proxies to demo exchange (DomainOrderbookStack)
-    ├── domain-core.ts    # Core Lambda + DynamoDB Feedback table + API routes (DomainCoreStack)
-    ├── domain-trading.ts # Trading Lambda (7 functions) + DynamoDB (bots + trades + price-history + bot-performance + settings + backtests) + S3 (backtest-reports) + KMS + SNS + Step Functions (backtest workflow) + EventBridge scheduling (DomainTradingStack)
-    ├── auth-page.ts      # S3 + CloudFront for auth page SPA (AuthPageStack)
-    ├── webapp.ts         # S3 + CloudFront for authenticated dashboard (WebappStack)
-    └── website.ts        # S3 + CloudFront for public marketing site (WebsiteStack)
+    ├── auth.ts               # Cognito User Pool + Client + Portfolio table (with username GSI) + pre-signup + post-confirmation triggers (AuthStack)
+    ├── rest-api.ts           # API Gateway REST API + Cognito Authorizer (RestApiStack)
+    ├── domain-bots.ts        # Bots Lambda + DynamoDB (bots + settings) + KMS + API routes under /bots, /settings (DomainBotsStack)
+    ├── domain-market.ts      # Market Lambda (2 functions) + DynamoDB (price-history) + SNS + EventBridge 1-min schedule + API routes under /market (DomainMarketStack)
+    ├── domain-executor.ts    # Executor Lambda (2 functions) + DynamoDB (trades) + SNS subscription + API routes under /trades (DomainExecutorStack)
+    ├── domain-exchange.ts    # Exchange Lambda (2 functions) + Demo Exchange regional API + DynamoDB (balances + orders) + API routes under /exchange (DomainExchangeStack)
+    ├── domain-analytics.ts   # Analytics Lambda (3 functions) + DynamoDB (bot-performance + portfolio-performance) + 2x EventBridge 5-min schedules + API routes under /analytics (DomainAnalyticsStack)
+    ├── domain-backtesting.ts # Backtesting Lambda (4 functions) + DynamoDB (backtests) + S3 (backtest-reports) + Step Functions workflow + API routes under /backtests (DomainBacktestingStack)
+    ├── domain-account.ts     # Account Lambda + DynamoDB (feedback) + cross-domain deletion + API routes under /feedback, /account (DomainAccountStack)
+    ├── webapp.ts             # S3 + CloudFront for authenticated dashboard (WebappStack)
+    └── website.ts            # S3 + CloudFront for public marketing site (WebsiteStack)
 ```
 
 ## Tech Stack

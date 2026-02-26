@@ -205,7 +205,7 @@ export default function Bots() {
     try {
       setLoading(true);
       setError(null);
-      const data = await request<{ items: ApiBotRecord[] }>('GET', '/trading/bots');
+      const data = await request<{ items: ApiBotRecord[] }>('GET', '/bots');
       setBotList(data.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load bots');
@@ -315,7 +315,7 @@ export default function Bots() {
         payload.sellSizing = sellSizing;
         payload.stopLoss = stopLoss;
         payload.takeProfit = takeProfit;
-        await request('PUT', `/trading/bots/${editingBot.botId}`, payload);
+        await request('PUT', `/bots/${editingBot.botId}`, payload);
       } else {
         // For create, only send present configs
         const createPayload: Record<string, unknown> = { name, pair, executionMode };
@@ -328,7 +328,7 @@ export default function Bots() {
         if (sellSizing) createPayload.sellSizing = sellSizing;
         if (stopLoss) createPayload.stopLoss = stopLoss;
         if (takeProfit) createPayload.takeProfit = takeProfit;
-        await request('POST', '/trading/bots', createPayload);
+        await request('POST', '/bots', createPayload);
       }
       setEditingBot(null);
       await fetchBots();
@@ -344,7 +344,7 @@ export default function Bots() {
     e.stopPropagation();
     const newStatus = bot.status === 'active' ? 'paused' : 'active';
     try {
-      await request('PUT', `/trading/bots/${bot.botId}`, { status: newStatus });
+      await request('PUT', `/bots/${bot.botId}`, { status: newStatus });
       await fetchBots();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update status');
@@ -355,7 +355,7 @@ export default function Bots() {
   const handleDelete = async (bot: ApiBotRecord, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await request('DELETE', `/trading/bots/${bot.botId}`);
+      await request('DELETE', `/bots/${bot.botId}`);
       await fetchBots();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete bot');

@@ -99,8 +99,8 @@ export default function Settings() {
     setError(null);
     try {
       const [settingsRes, optionsRes] = await Promise.allSettled([
-        request<TradingSettings>('GET', '/trading/settings'),
-        request<{ exchanges: ExchangeOption[] }>('GET', '/trading/settings/exchange-options'),
+        request<TradingSettings>('GET', '/settings'),
+        request<{ exchanges: ExchangeOption[] }>('GET', '/settings/exchange-options'),
       ]);
 
       if (optionsRes.status === 'fulfilled') {
@@ -171,7 +171,7 @@ export default function Settings() {
     setError(null);
     setSuccess(null);
     try {
-      await request('PUT', '/trading/settings', {
+      await request('PUT', '/settings', {
         exchange: formExchange,
         baseCurrency: formBaseCurrency,
         apiKey: formApiKey,
@@ -197,7 +197,7 @@ export default function Settings() {
     setDeleting(true);
     setError(null);
     try {
-      await request('DELETE', '/core/account');
+      await request('DELETE', '/account');
       await signOut();
       navigate('/sign-in');
     } catch (err) {

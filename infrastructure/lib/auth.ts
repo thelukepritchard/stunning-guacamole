@@ -66,7 +66,7 @@ export class AuthStack extends cdk.NestedStack {
       functionName: `${props.name}-${props.environment}-portfolio-pre-signup`,
       runtime: lambda.Runtime.NODEJS_24_X,
       memorySize: 256,
-      entry: path.join(__dirname, '../../src/domains/portfolio/async/pre-signup.ts'),
+      entry: path.join(__dirname, '../../src/domains/account/async/pre-signup.ts'),
       handler: 'handler',
       environment: {
         PORTFOLIO_TABLE_NAME: this.portfolioTable.tableName,
@@ -78,9 +78,9 @@ export class AuthStack extends cdk.NestedStack {
     // ─── Post-Confirmation Lambda ─────────────────────────────────
     // Also writes a default starter bot to the trading bots table.
     // The table name is constructed from the naming convention to avoid
-    // a circular dependency (AuthStack is created before DomainTradingStack).
+    // a circular dependency (AuthStack is created before DomainBotsStack).
 
-    const botsTableName = `${props.name}-${props.environment}-trading-bots`;
+    const botsTableName = `${props.name}-${props.environment}-bots`;
     const botsTableRef = dynamodb.Table.fromTableName(this, 'BotsTableRef', botsTableName);
 
     const postConfirmationHandler = new NodejsFunction(this, 'PostConfirmationHandler', {
@@ -88,7 +88,7 @@ export class AuthStack extends cdk.NestedStack {
       runtime: lambda.Runtime.NODEJS_24_X,
       memorySize: 256,
       timeout: cdk.Duration.seconds(10),
-      entry: path.join(__dirname, '../../src/domains/portfolio/async/post-confirmation.ts'),
+      entry: path.join(__dirname, '../../src/domains/account/async/post-confirmation.ts'),
       handler: 'handler',
       environment: {
         PORTFOLIO_TABLE_NAME: this.portfolioTable.tableName,
