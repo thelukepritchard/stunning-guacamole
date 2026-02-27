@@ -16,19 +16,30 @@ import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { BarChart } from '@mui/x-charts/BarChart';
+import { PieChart } from '@mui/x-charts/PieChart';
 import StatCard from '../components/StatCard';
 import { useApi } from '../hooks/useApi';
 import { typography } from '@shared/styles/tokens';
-import { formatDollar } from '../utils/format';
+import { formatNumber, formatDollar } from '../utils/format';
 import type { Trend } from '../data/mockData';
 
 // ─── API Response Types ─────────────────────────────────────────
 
-/** Balance response from the orderbook API. */
+/** A single holding in the user's portfolio. */
+interface HoldingEntry {
+  asset: string;
+  name: string;
+  amount: number;
+  price: number;
+  value: number;
+}
+
+/** Balance response from the exchange API. */
 interface BalanceResponse {
   exchange: string;
   currency: string;
-  available: number;
+  totalValue: number;
+  holdings: HoldingEntry[];
 }
 
 /** Bot record from the trading API. */
@@ -112,6 +123,13 @@ function sample<T>(arr: T[], n: number): T[] {
   return Array.from({ length: n }, (_, i) => arr[Math.round(i * step)]!);
 }
 
+/** Brand colours for asset allocation pie chart slices. */
+const ALLOCATION_COLORS: Record<string, string> = {
+  USD: '#4caf50',
+  AUD: '#002f6c',
+  BTC: '#f7931a',
+};
+
 // ─── Component ──────────────────────────────────────────────────
 
 /** Dashboard landing page with real-time stats, charts, and recent trades. */
@@ -180,13 +198,13 @@ export default function Dashboard() {
 
   const statCards = [
     {
-      title: 'Cash Balance',
-      value: formatDollar(balance?.available ?? 0, 0),
-      interval: 'Available USD',
+      title: 'Portfolio Performance',
+      value: `${(latestPerf?.totalNetPnl ?? 0) >= 0 ? '+' : ''}${formatDollar(latestPerf?.totalNetPnl ?? 0, 0)}`,
+      interval: 'Cumulative P&L',
       trend: balanceTrend,
       trendLabel: latestPerf
-        ? `${latestPerf.totalNetPnl >= 0 ? '+' : ''}${formatDollar(latestPerf.totalNetPnl, 0)} P&L`
-        : '$0 P&L',
+        ? `${latestPerf.pnl24h >= 0 ? '+' : ''}${formatDollar(latestPerf.pnl24h, 0)} today`
+        : '$0 today',
       sparkline: pnlSparkline.length > 0 ? pnlSparkline : [0],
     },
     {
@@ -216,6 +234,14 @@ export default function Dashboard() {
       sparkline: [openOrderCount],
     },
   ];
+
+  // Pie chart data from holdings
+  const allocationData = (balance?.holdings ?? []).map((h, i) => ({
+    id: i,
+    value: balance && balance.totalValue > 0 ? (h.value / balance.totalValue) * 100 : 0,
+    label: h.asset,
+    color: ALLOCATION_COLORS[h.asset] ?? '#94a3b8',
+  }));
 
   // Chart data — downsample to daily
   const dailyPoints = toDailyPoints(performance);
@@ -360,6 +386,99 @@ export default function Dashboard() {
                 </Box>
               )}
             </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Asset Allocation + Holdings */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid size={{ xs: 12, md: 5 }}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="subtitle2" gutterBottom>
+                Asset Allocation
+              </Typography>
+              {allocationData.length > 0 ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                  <PieChart
+                    height={300}
+                    series={[
+                      {
+                        data: allocationData,
+                        innerRadius: 60,
+                        outerRadius: 120,
+                        paddingAngle: 2,
+                        cornerRadius: 4,
+                        highlightScope: { fade: 'global', highlight: 'item' },
+                        valueFormatter: (v) => `${v.value.toFixed(1)}%`,
+                      },
+                    ]}
+                    width={350}
+                    slotProps={{
+                      legend: {
+                        position: { vertical: 'bottom', horizontal: 'center' },
+                      },
+                    }}
+                  />
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No holdings data yet
+                  </Typography>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, md: 7 }}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="subtitle2" gutterBottom>
+                Holdings
+              </Typography>
+            </CardContent>
+            {(balance?.holdings ?? []).length > 0 ? (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Asset</TableCell>
+                      <TableCell align="right">Amount</TableCell>
+                      <TableCell align="right">Price</TableCell>
+                      <TableCell align="right">Value</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {balance?.holdings.map((h) => (
+                      <TableRow key={h.asset}>
+                        <TableCell>
+                          <Typography fontWeight={600}>{h.asset}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {h.name}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
+                          {formatNumber(h.amount, h.asset === 'USD' ? 2 : 6)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
+                          {h.asset === 'USD' ? '-' : formatDollar(h.price)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
+                          {formatDollar(h.value)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            ) : (
+              <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                <Typography variant="body2" color="text.secondary">
+                  No holdings data yet
+                </Typography>
+              </CardContent>
+            )}
           </Card>
         </Grid>
       </Grid>

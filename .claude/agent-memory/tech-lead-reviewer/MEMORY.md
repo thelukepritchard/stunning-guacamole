@@ -79,6 +79,24 @@
 - `backtestReportsBucket.grantRead(handler)` grants `s3:GetObject` + `s3:ListBucket`. The `ListObjectsV2` used in `deleteS3Prefix` requires `s3:ListBucket`. This is correctly covered.
 - CLAUDE.md not updated with new `delete-account.ts` route file in the core domain.
 
+### Dashboard Holdings Feature (get-balance rewrite)
+- `BalanceResponse` in `src/domains/shared/types.ts` now has `totalValue: number` + `holdings: HoldingEntry[]` (replacing `available: number`). Any other consumer of `BalanceResponse` must be updated.
+- `get-balance.ts` fetches balance + BTC price in parallel via `Promise.all`. Test mock order must match: first mockResolvedValueOnce = balance fetch, second = BTC price fetch. Confirmed correct.
+- `ALLOCATION_COLORS` map in Dashboard.tsx uses hardcoded hex strings — violates webapp CLAUDE.md rule of using theme palette. Should reference `theme.palette` or shared `colors` tokens.
+- Frontend local interface redefinition: `HoldingEntry` and `BalanceResponse` are duplicated in `Dashboard.tsx` instead of being imported from a shared types package. Acceptable for frontend/backend separation but worth noting.
+- `balance!` non-null assertion on line 454 of Dashboard.tsx inside a conditional that already confirms `(balance?.holdings ?? []).length > 0` — the assertion is safe but the guard logic is slightly indirect; clean alternative is to use `balance?.holdings.map(...)` directly.
+- `BOTS_TABLE_NAME` added to executor API handler environment (for `listBotTrades` ownership check) — needed and correct. IAM grant `grantReadData` added for `botsTable` on handler.
+- `fetchBtcPrice` in `get-balance.ts`: no error handling if Binance returns non-OK response or non-numeric price string. `parseFloat` of a bad string returns `NaN`, which propagates silently into `btcValue` and `totalValue`.
+
+### Bot Executor — Demo Exchange Integration (executeOnExchange)
+- `DEMO_EXCHANGE_API_URL` is read at module level (`const DEMO_EXCHANGE_API_URL = process.env.DEMO_EXCHANGE_API_URL!`) — captured at import time. Tests in the first `describe` block that don't set this env var are safe only because those bots have no sizing config and `executeOnExchange` returns early. Always set `DEMO_EXCHANGE_API_URL` in every `beforeEach` that exercises exchange paths.
+- `executeOnExchange` is called BEFORE `recordTrade` in both `once_and_wait` and `condition_cooldown` (cooldown) paths. In the no-cooldown branch, there is no conditional write guarding duplicate execution — concurrent invocations can place duplicate orders on the exchange while the DynamoDB-level deduplication (cooldown timestamp) is absent.
+- `placeExchangeOrder` swallows non-ok HTTP errors (logs + continues) — intentional design so exchange failures don't block trade signal recording.
+- `fetchDemoBalance` throws on non-ok HTTP — this propagates up through `calculateOrderSize` → `executeOnExchange` → bot-level catch, preventing `recordTrade` from being called. This is an intentional but undocumented design decision.
+- `BotRecord` has no `exchange` field — bot-executor always calls the demo exchange regardless of which exchange the user configured in settings. This is correct for now (demo-only), but will need a guard when real exchange support is added.
+- `condition_cooldown` mode is not tested at all in `bot-executor.test.ts` — neither the no-cooldown nor the with-cooldown path. Known gap.
+- Lambda timeout is 30 seconds — correct for per-bot processing but tight if many bots with percentage sizing each trigger a balance fetch + order POST.
+
 ### Orderbook Domain (proxy pattern)
 - All four routes extract `sub` from `event.requestContext.authorizer?.claims?.sub` (Cognito JWT claim) — correct auth pattern.
 - `list-orders.ts` casts `Record<string, unknown>` fields with `as string`/`as number` — safe but brittle; prefer using `DemoOrderRecord` type imported from demo-exchange or a local mapped type.

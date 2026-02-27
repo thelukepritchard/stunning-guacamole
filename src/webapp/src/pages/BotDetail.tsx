@@ -57,7 +57,7 @@ const statusColor: Record<BotStatus, 'success' | 'warning' | 'default'> = {
 /**
  * Bot detail page showing pair-specific information.
  *
- * Route: /bots/:pair (e.g. /bots/BTC-USDT)
+ * Route: /bots/:pair (e.g. /bots/BTC)
  * Displays active bots on this pair and trade history.
  */
 export default function BotDetail() {
@@ -65,7 +65,7 @@ export default function BotDetail() {
   const navigate = useNavigate();
   const { request } = useApi();
 
-  const displayPair = pairParam?.replace('-', '/') ?? '';
+  const displayPair = pairParam ?? '';
 
   const [bots, setBots] = useState<ApiBotRecord[]>([]);
   const [trades, setTrades] = useState<ApiTradeRecord[]>([]);

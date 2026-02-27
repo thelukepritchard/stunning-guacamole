@@ -437,19 +437,26 @@ export default function Bots() {
 
         {/* Cooldown Period (condition_cooldown only) */}
         {executionMode === 'condition_cooldown' && (
-          <TextField
-            label="Cooldown Period (minutes)"
-            type="number"
-            fullWidth
-            value={cooldownMinutes}
-            onChange={(e) => {
-              const val = e.target.value;
-              setCooldownMinutes(val === '' ? '' : Math.max(0, Number(val)));
-            }}
-            helperText="Minimum time between trades per action. Leave empty or 0 for no time-based cooldown."
-            slotProps={{ htmlInput: { min: 0 } }}
-            sx={{ mb: 3 }}
-          />
+          <>
+            <TextField
+              label="Cooldown Period (minutes)"
+              type="number"
+              fullWidth
+              value={cooldownMinutes}
+              onChange={(e) => {
+                const val = e.target.value;
+                setCooldownMinutes(val === '' ? '' : Math.max(0, Number(val)));
+              }}
+              helperText="Minimum time between trades per action. Leave empty or 0 for no time-based cooldown."
+              slotProps={{ htmlInput: { min: 0 } }}
+              sx={{ mb: cooldownMinutes === 0 || cooldownMinutes === '' ? 1 : 3 }}
+            />
+            {(cooldownMinutes === 0 || cooldownMinutes === '') && (
+              <Alert severity="warning" sx={{ mb: 3 }}>
+                With no cooldown, this bot will execute a buy trade every minute the condition is met.
+              </Alert>
+            )}
+          </>
         )}
 
         {/* Buy Action */}
@@ -763,7 +770,7 @@ export default function Bots() {
                         sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigate(`/bots/${bot.pair.replace('/', '-')}`);
+                          navigate(`/bots/${bot.pair}`);
                         }}
                       >
                         {bot.pair}

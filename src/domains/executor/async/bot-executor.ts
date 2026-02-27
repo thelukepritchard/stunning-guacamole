@@ -5,12 +5,13 @@ import { evaluateRuleGroup } from '../../shared/rule-evaluator';
 import type { BotAction, BotRecord, IndicatorSnapshot, SizingConfig, TradeTrigger, TradeRecord } from '../../shared/types';
 
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const DEMO_EXCHANGE_API_URL = process.env.DEMO_EXCHANGE_API_URL!;
 
 /**
  * Queries all active bots for a given trading pair using the pair-status GSI.
  * Returns fully-hydrated bot records via strongly consistent reads.
  *
- * @param pair - The trading pair (e.g. "BTC/USDT").
+ * @param pair - The coin ticker (e.g. "BTC").
  * @returns All active bot records for the pair.
  */
 async function queryActiveBotsByPair(pair: string): Promise<BotRecord[]> {
@@ -46,6 +47,118 @@ async function queryActiveBotsByPair(pair: string): Promise<BotRecord[]> {
   }
 
   return bots;
+}
+
+/**
+ * Fetches the user's current demo exchange balance.
+ *
+ * @param sub - The user's Cognito sub.
+ * @returns The user's USD and BTC balances.
+ */
+async function fetchDemoBalance(sub: string): Promise<{ usd: number; btc: number }> {
+  const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/balance?sub=${encodeURIComponent(sub)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch demo balance: ${res.status}`);
+  }
+  return (await res.json()) as { usd: number; btc: number };
+}
+
+/**
+ * Calculates the order size in BTC based on the bot's sizing configuration.
+ *
+ * - Fixed sizing: converts the dollar amount to BTC at the current price.
+ * - Percentage sizing: fetches the current balance and computes the fraction.
+ *   For buys, percentage is applied to available USD. For sells, to held BTC.
+ *
+ * @param sub - The user's Cognito sub.
+ * @param action - The trade action (buy or sell).
+ * @param sizing - Position sizing configuration.
+ * @param price - The current BTC price.
+ * @returns The order size in BTC.
+ */
+async function calculateOrderSize(
+  sub: string,
+  action: BotAction,
+  sizing: SizingConfig,
+  price: number,
+): Promise<number> {
+  if (sizing.type === 'fixed') {
+    return sizing.value / price;
+  }
+
+  // Percentage sizing — need current balance
+  const balance = await fetchDemoBalance(sub);
+
+  if (action === 'buy') {
+    const dollarAmount = balance.usd * (sizing.value / 100);
+    return dollarAmount / price;
+  }
+  return balance.btc * (sizing.value / 100);
+}
+
+/**
+ * Places a market order on the demo exchange via the internal API.
+ * Logs errors but does not throw — exchange execution failures should
+ * not prevent trade signal recording.
+ *
+ * @param sub - The user's Cognito sub.
+ * @param pair - The trading pair (e.g. "BTC").
+ * @param side - The order side ("buy" or "sell").
+ * @param size - The order size in BTC.
+ */
+async function placeExchangeOrder(sub: string, pair: string, side: BotAction, size: number): Promise<void> {
+  const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/orders`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sub, pair, side, size }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.error('Demo exchange order failed:', { status: res.status, body, sub, pair, side, size });
+  } else {
+    console.log('Demo exchange order placed:', { sub, pair, side, size });
+  }
+}
+
+/**
+ * Executes a trade on the demo exchange using the bot's sizing config.
+ * Calculates the order size and places the order. If no sizing is
+ * configured, logs a warning and skips execution.
+ *
+ * Catches all errors internally — exchange execution failures must not
+ * prevent trade signal recording or leave the bot in an inconsistent state.
+ *
+ * @param bot - The bot record.
+ * @param action - The trade action (buy or sell).
+ * @param price - The current market price.
+ */
+async function executeOnExchange(bot: BotRecord, action: BotAction, price: number): Promise<void> {
+  const sizing = action === 'buy' ? bot.buySizing : bot.sellSizing;
+
+  if (!sizing) {
+    console.warn('No sizing configured, skipping exchange execution:', { botId: bot.botId, action });
+    return;
+  }
+
+  if (!price || price <= 0) {
+    console.warn('Invalid price for order size calculation:', { botId: bot.botId, action, price });
+    return;
+  }
+
+  try {
+    const size = await calculateOrderSize(bot.sub, action, sizing, price);
+    if (size <= 0) {
+      console.warn('Calculated order size is zero or negative, skipping:', { botId: bot.botId, action, size });
+      return;
+    }
+
+    await placeExchangeOrder(bot.sub, bot.pair, action, size);
+  } catch (err) {
+    console.error('Exchange execution failed:', { botId: bot.botId, action }, err);
+  }
 }
 
 /**
@@ -175,7 +288,7 @@ function evaluateStopLossTakeProfit(bot: BotRecord, currentPrice: number): Trade
  * @returns True if the action is allowed.
  */
 function isAllowedOnceAndWait(action: BotAction, lastAction?: BotAction): boolean {
-  if (!lastAction) return true;
+  if (!lastAction) return action === 'buy';
   return lastAction !== action;
 }
 
@@ -226,6 +339,7 @@ async function executeOnceAndWait(bot: BotRecord, action: BotAction, indicators:
   });
 
   if (claimed) {
+    await executeOnExchange(bot, action, indicators.price);
     await recordTrade(bot, action, trigger, indicators, sizing);
     await updateEntryPrice(bot, action, indicators.price);
   }
@@ -268,6 +382,7 @@ async function tryConditionCooldownAction(
       },
     });
     if (claimed) {
+      await executeOnExchange(bot, action, indicators.price);
       await recordTrade(bot, action, trigger, indicators, sizing);
       await updateEntryPrice(bot, action, indicators.price);
       return true;
@@ -275,6 +390,7 @@ async function tryConditionCooldownAction(
     return false;
   }
 
+  await executeOnExchange(bot, action, indicators.price);
   await recordTrade(bot, action, trigger, indicators, sizing);
   await updateEntryPrice(bot, action, indicators.price);
   return true;

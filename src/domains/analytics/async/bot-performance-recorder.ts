@@ -42,7 +42,9 @@ function calculatePnl(
   const avgBuyCost = totalBuys > 0 ? totalBuyValue / totalBuys : 0;
 
   // Realised P&L: profit/loss on units that have been both bought and sold
-  const realisedPnl = totalSells > 0 ? totalSellValue - (totalSells * avgBuyCost) : 0;
+  // Guard: when there are no buys, avgBuyCost is 0 which would incorrectly
+  // treat sell value as pure profit — require at least one buy for realised P&L.
+  const realisedPnl = totalSells > 0 && totalBuys > 0 ? totalSellValue - (totalSells * avgBuyCost) : 0;
 
   // Unrealised P&L: value of open position vs average cost
   const unrealisedPnl = netPosition > 0 ? netPosition * (currentPrice - avgBuyCost) : 0;

@@ -111,10 +111,9 @@ export default function BotView() {
   const fetchPriceHistory = useCallback(async () => {
     if (!bot) return;
     try {
-      const pairParam = bot.pair.replace('/', '-');
       const data = await request<{ items: PriceHistoryItem[] }>(
         'GET',
-        `/market/prices/${pairParam}?period=${pricePeriod}`,
+        `/market/prices/${bot.pair}?period=${pricePeriod}`,
       );
       setPriceHistory(data.items);
     } catch (err) {
@@ -148,7 +147,7 @@ export default function BotView() {
   const totalBuyValue = buyTrades.reduce((a, b) => a + b.price, 0);
   const totalSellValue = sellTrades.reduce((a, b) => a + b.price, 0);
   const avgBuy = buyTrades.length > 0 ? totalBuyValue / buyTrades.length : 0;
-  const realisedPnl = sellTrades.length > 0 ? totalSellValue - (sellTrades.length * avgBuy) : 0;
+  const realisedPnl = sellTrades.length > 0 && buyTrades.length > 0 ? totalSellValue - (sellTrades.length * avgBuy) : 0;
   const netPosition = buyTrades.length - sellTrades.length;
   const latestPrice = priceHistory.length > 0 ? priceHistory[priceHistory.length - 1]!.price : 0;
   const unrealisedPnl = netPosition > 0 ? netPosition * (latestPrice - avgBuy) : 0;

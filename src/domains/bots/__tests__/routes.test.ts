@@ -99,7 +99,7 @@ describe('listBots', () => {
 describe('createBot', () => {
   const validBody = {
     name: 'My Bot',
-    pair: 'BTC/USD',
+    pair: 'BTC',
     executionMode: 'condition_cooldown',
     buyQuery: { combinator: 'and', rules: [] },
     buySizing: { type: 'fixed', value: 100 },
@@ -294,7 +294,7 @@ describe('updateBot', () => {
     sub: 'user-123',
     botId: 'b1',
     name: 'Old Name',
-    pair: 'BTC/USD',
+    pair: 'BTC',
     status: 'draft',
     executionMode: 'condition_cooldown',
     createdAt: '2024-01-01T00:00:00.000Z',

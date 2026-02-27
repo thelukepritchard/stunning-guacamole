@@ -50,7 +50,7 @@ const sampleBot = {
   sub: 'user-123',
   botId: 'b1',
   name: 'Test Bot',
-  pair: 'BTC/USDT',
+  pair: 'BTC',
   status: 'active',
   executionMode: 'condition_cooldown',
   createdAt: '2024-01-01T00:00:00.000Z',
@@ -139,7 +139,7 @@ describe('submitBacktest', () => {
     mockDdbSend
       .mockResolvedValueOnce({ Item: sampleBot })
       .mockResolvedValueOnce({ Items: [] })
-      .mockResolvedValueOnce({ Items: [{ pair: 'BTC/USDT', timestamp: '2023-12-02T00:00:00.000Z' }] })
+      .mockResolvedValueOnce({ Items: [{ pair: 'BTC', timestamp: '2023-12-02T00:00:00.000Z' }] })
       .mockResolvedValueOnce({}); // PutCommand
     const result = await submitBacktest(authedEvent({ pathParameters: { botId: 'b1' } }));
     expect(result.statusCode).toBe(202);

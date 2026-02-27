@@ -14,29 +14,30 @@ const PERIOD_HOURS: Record<string, number> = {
   '30d': 720,
 };
 
-/** Known quote currencies for pair normalization (longest first to avoid prefix collisions). */
+/** Known quote currency suffixes for legacy pair normalization (longest first). */
 const KNOWN_QUOTES = ['FDUSD', 'USDT', 'USDC', 'USD', 'AUD', 'EUR', 'BTC', 'ETH', 'BNB'];
 
 /**
- * Normalises a pair parameter into the canonical `BASE/QUOTE` format
- * used in the price history table.
+ * Normalises a pair/coin parameter into the simple coin ticker format
+ * used in the price history table (e.g. `BTC`).
  *
- * Handles three input formats:
- * - `BTC/USDT` — already canonical
- * - `BTC-USDT` — dash separator (URL-safe encoding from the frontend)
- * - `BTCUSDT`  — no separator (Binance-style symbol)
+ * Handles multiple input formats for backward compatibility:
+ * - `BTC`       — already canonical
+ * - `BTC/USDT`  — strip after `/`
+ * - `BTC-USDT`  — strip after `-`
+ * - `BTCUSDT`   — strip known quote suffixes
  *
- * @param raw - The raw pair string from the URL path parameter.
- * @returns The normalised pair string (e.g. `BTC/USDT`).
+ * @param raw - The raw pair/coin string from the URL path parameter.
+ * @returns The normalised coin ticker (e.g. `BTC`).
  */
-function normalizePair(raw: string): string {
-  if (raw.includes('/')) return raw;
-  if (raw.includes('-')) return raw.replace('-', '/');
+function normalizeCoin(raw: string): string {
+  if (raw.includes('/')) return raw.split('/')[0];
+  if (raw.includes('-')) return raw.split('-')[0];
 
   const upper = raw.toUpperCase();
   for (const quote of KNOWN_QUOTES) {
     if (upper.endsWith(quote) && upper.length > quote.length) {
-      return `${upper.slice(0, -quote.length)}/${quote}`;
+      return upper.slice(0, -quote.length);
     }
   }
 
@@ -61,8 +62,8 @@ export async function getPriceHistory(
   const pairParam = event.pathParameters?.pair;
   if (!pairParam) return jsonResponse(400, { error: 'Missing pair' });
 
-  // Normalise URL param (BTC-USDT, BTCUSDT) to DynamoDB key (BTC/USDT)
-  const pair = normalizePair(pairParam);
+  // Normalise URL param to coin ticker (e.g. BTC)
+  const pair = normalizeCoin(pairParam);
 
   const period = event.queryStringParameters?.period ?? '24h';
   const hours = PERIOD_HOURS[period];

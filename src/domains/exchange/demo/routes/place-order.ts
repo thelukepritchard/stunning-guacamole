@@ -3,7 +3,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { jsonResponse } from '../utils';
 import { ensureBalance } from './get-balance';
-import { DEMO_PAIRS, BINANCE_TICKER_URL } from '../../../shared/types';
+import { DEMO_COINS, BINANCE_TICKER_URL } from '../../../shared/types';
 import type { DemoOrderRecord } from '../../../shared/types';
 import { randomUUID } from 'node:crypto';
 
@@ -12,7 +12,7 @@ const BALANCES_TABLE = process.env.BALANCES_TABLE_NAME!;
 const ORDERS_TABLE = process.env.ORDERS_TABLE_NAME!;
 
 /**
- * Fetches the current BTC/USDT price from the Binance public API.
+ * Fetches the current BTC price from the Binance public API (via BTCUSDT).
  *
  * @returns The current BTC price in USD (approximated via USDT).
  */
@@ -56,9 +56,9 @@ export async function placeOrder(event: APIGatewayProxyEvent): Promise<APIGatewa
     return jsonResponse(400, { error: 'size must be a positive number' });
   }
 
-  const validPair = DEMO_PAIRS.find(p => p.symbol === pair);
-  if (!validPair) {
-    return jsonResponse(400, { error: `Unsupported pair: ${pair}. Available: ${DEMO_PAIRS.map(p => p.symbol).join(', ')}` });
+  const validCoin = DEMO_COINS.find(c => c.ticker === pair);
+  if (!validCoin) {
+    return jsonResponse(400, { error: `Unsupported pair: ${pair}. Available: ${DEMO_COINS.map(c => c.ticker).join(', ')}` });
   }
 
   // Ensure user has a balance record (seeds default if new)

@@ -31,15 +31,15 @@ export async function getPairs(event: APIGatewayProxyEvent): Promise<APIGatewayP
     return jsonResponse(res.status, err);
   }
 
-  const data = (await res.json()) as { pairs: Array<{ symbol: string; base: string; quote: string }> };
+  const data = (await res.json()) as { coins: Array<{ ticker: string; name: string }> };
 
   const response: PairsResponse = {
     exchange: 'demo',
-    baseCurrency: 'USD',
-    pairs: data.pairs.map(p => ({
-      symbol: p.symbol,
-      coin: p.base,
-      coinName: COIN_NAMES[p.base] ?? p.base,
+    baseCurrency: 'AUD',
+    pairs: data.coins.map(c => ({
+      symbol: c.ticker,
+      coin: c.ticker,
+      coinName: COIN_NAMES[c.ticker] ?? c.name,
     })),
   };
 

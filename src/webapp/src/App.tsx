@@ -7,7 +7,6 @@ import DashboardLayout from './layouts/DashboardLayout';
 import SignIn from './pages/SignIn';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import Portfolios from './pages/Portfolios';
 import Orderbook from './pages/Orderbook';
 import Bots from './pages/Bots';
 import BotDetail from './pages/BotDetail';
@@ -37,7 +36,6 @@ export default function App() {
             }
           >
             <Route index element={<Dashboard />} />
-            <Route path="portfolios" element={<Portfolios />} />
             <Route path="orderbook" element={<Orderbook />} />
             <Route path="leaderboard" element={<Leaderboard />} />
             <Route path="leaderboard/:username" element={<TraderProfile />} />

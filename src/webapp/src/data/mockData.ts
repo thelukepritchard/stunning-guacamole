@@ -32,31 +32,6 @@ export interface Trade {
   bot: string;
 }
 
-/** A portfolio summary. */
-export interface Portfolio {
-  name: string;
-  value: number;
-  assets: number;
-  change24h: number;
-}
-
-/** A pie chart allocation slice. */
-export interface AllocationSlice {
-  label: string;
-  value: number;
-  color: string;
-}
-
-/** A holdings table row. */
-export interface Holding {
-  asset: string;
-  amount: number;
-  avgCost: number;
-  price: number;
-  value: number;
-  pnl: number;
-}
-
 /** An orderbook entry (bid or ask). */
 export interface OrderbookEntry {
   price: number;
@@ -166,45 +141,14 @@ export const volumeData = performanceData.map((p) => ({
 
 /** Recent trades table data. */
 export const recentTrades: Trade[] = [
-  { time: '14:32:05', pair: 'BTC/USDT', side: 'Buy', price: 97243.5, amount: 0.015, total: 1458.65, bot: 'Grid Bot #1' },
-  { time: '14:28:11', pair: 'ETH/USDT', side: 'Sell', price: 3421.8, amount: 1.2, total: 4106.16, bot: 'DCA Bot #2' },
-  { time: '14:15:44', pair: 'SOL/USDT', side: 'Buy', price: 187.32, amount: 12.0, total: 2247.84, bot: 'Grid Bot #3' },
-  { time: '13:58:22', pair: 'BTC/USDT', side: 'Buy', price: 97180.0, amount: 0.008, total: 777.44, bot: 'Grid Bot #1' },
-  { time: '13:45:09', pair: 'AVAX/USDT', side: 'Sell', price: 38.45, amount: 50.0, total: 1922.5, bot: 'Momentum #1' },
-  { time: '13:32:55', pair: 'ETH/USDT', side: 'Buy', price: 3415.2, amount: 0.5, total: 1707.6, bot: 'DCA Bot #2' },
-  { time: '13:20:18', pair: 'LINK/USDT', side: 'Buy', price: 19.87, amount: 100.0, total: 1987.0, bot: 'Grid Bot #4' },
-  { time: '13:05:41', pair: 'SOL/USDT', side: 'Sell', price: 186.95, amount: 8.0, total: 1495.6, bot: 'Grid Bot #3' },
-];
-
-// ─── Portfolios Data ─────────────────────────────────────────────
-
-/** Portfolio summaries. */
-export const portfolios: Portfolio[] = [
-  { name: 'Main Portfolio', value: 84250, assets: 6, change24h: 2.3 },
-  { name: 'DCA Portfolio', value: 28120, assets: 3, change24h: -0.8 },
-  { name: 'Grid Trading', value: 12162, assets: 4, change24h: 1.1 },
-];
-
-/** Allocation pie chart data. */
-export const allocationData: AllocationSlice[] = [
-  { label: 'BTC', value: 42, color: '#f7931a' },
-  { label: 'ETH', value: 28, color: '#627eea' },
-  { label: 'SOL', value: 12, color: '#00ffa3' },
-  { label: 'AVAX', value: 8, color: '#e84142' },
-  { label: 'LINK', value: 6, color: '#2a5ada' },
-  { label: 'Others', value: 4, color: '#94a3b8' },
-];
-
-/** Holdings table data. */
-export const holdings: Holding[] = [
-  { asset: 'BTC', amount: 0.538, avgCost: 85200, price: 97243, value: 52316.83, pnl: 14.14 },
-  { asset: 'ETH', amount: 10.2, avgCost: 2980, price: 3421, value: 34894.2, pnl: 14.8 },
-  { asset: 'SOL', amount: 80.0, avgCost: 165, price: 187.32, value: 14985.6, pnl: 13.53 },
-  { asset: 'AVAX', amount: 260.0, avgCost: 32, price: 38.45, value: 9997.0, pnl: 20.16 },
-  { asset: 'LINK', amount: 420.0, avgCost: 16.5, price: 19.87, value: 8345.4, pnl: 20.42 },
-  { asset: 'DOT', amount: 350.0, avgCost: 6.8, price: 7.52, value: 2632.0, pnl: 10.59 },
-  { asset: 'MATIC', amount: 3200.0, avgCost: 0.38, price: 0.42, value: 1344.0, pnl: 10.53 },
-  { asset: 'ATOM', amount: 55.0, avgCost: 8.1, price: 9.15, value: 503.25, pnl: 12.96 },
+  { time: '14:32:05', pair: 'BTC', side: 'Buy', price: 97243.5, amount: 0.015, total: 1458.65, bot: 'Grid Bot #1' },
+  { time: '14:28:11', pair: 'ETH', side: 'Sell', price: 3421.8, amount: 1.2, total: 4106.16, bot: 'DCA Bot #2' },
+  { time: '14:15:44', pair: 'SOL', side: 'Buy', price: 187.32, amount: 12.0, total: 2247.84, bot: 'Grid Bot #3' },
+  { time: '13:58:22', pair: 'BTC', side: 'Buy', price: 97180.0, amount: 0.008, total: 777.44, bot: 'Grid Bot #1' },
+  { time: '13:45:09', pair: 'AVAX', side: 'Sell', price: 38.45, amount: 50.0, total: 1922.5, bot: 'Momentum #1' },
+  { time: '13:32:55', pair: 'ETH', side: 'Buy', price: 3415.2, amount: 0.5, total: 1707.6, bot: 'DCA Bot #2' },
+  { time: '13:20:18', pair: 'LINK', side: 'Buy', price: 19.87, amount: 100.0, total: 1987.0, bot: 'Grid Bot #4' },
+  { time: '13:05:41', pair: 'SOL', side: 'Sell', price: 186.95, amount: 8.0, total: 1495.6, bot: 'Grid Bot #3' },
 ];
 
 // ─── Orderbook Data ──────────────────────────────────────────────
@@ -269,18 +213,9 @@ export const recentFills: Fill[] = [
 
 // ─── Bots Data ──────────────────────────────────────────────────
 
-/** Available trading pairs. */
+/** Available trading pairs (coin tickers). */
 export const tradingPairs = [
-  'BTC/USDT',
-  'ETH/USDT',
-  'SOL/USDT',
-  'AVAX/USDT',
-  'LINK/USDT',
-  'DOT/USDT',
-  'MATIC/USDT',
-  'ATOM/USDT',
-  'ADA/USDT',
-  'XRP/USDT',
+  'BTC',
 ] as const;
 
 /** @deprecated Bots are now fetched from the trading API. */

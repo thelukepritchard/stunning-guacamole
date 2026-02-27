@@ -23,6 +23,8 @@ export interface DomainExecutorStackProps extends cdk.NestedStackProps {
   botsTable: dynamodb.Table;
   /** The SNS topic for indicator distribution (executor subscribes). */
   indicatorsTopic: sns.Topic;
+  /** The base URL of the demo exchange internal API. */
+  demoExchangeApiUrl: string;
 }
 
 /**
@@ -69,10 +71,12 @@ export class DomainExecutorStack extends cdk.NestedStack {
       handler: 'handler',
       environment: {
         TRADES_TABLE_NAME: this.tradesTable.tableName,
+        BOTS_TABLE_NAME: props.botsTable.tableName,
       },
     });
 
     this.tradesTable.grantReadData(handler);
+    props.botsTable.grantReadData(handler);
 
     // Bot Executor handler — evaluates rules and records trades
     const botExecutorHandler = new NodejsFunction(this, 'BotExecutorHandler', {
@@ -85,6 +89,7 @@ export class DomainExecutorStack extends cdk.NestedStack {
       environment: {
         BOTS_TABLE_NAME: props.botsTable.tableName,
         TRADES_TABLE_NAME: this.tradesTable.tableName,
+        DEMO_EXCHANGE_API_URL: props.demoExchangeApiUrl,
       },
     });
 

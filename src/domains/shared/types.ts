@@ -396,11 +396,21 @@ export interface PortfolioPerformanceRecord {
 
 // ─── Exchange Types ─────────────────────────────────────────────
 
+/** A single holding in the user's portfolio. */
+export interface HoldingEntry {
+  asset: string;
+  name: string;
+  amount: number;
+  price: number;
+  value: number;
+}
+
 /** Normalised balance response returned by the exchange API. */
 export interface BalanceResponse {
   exchange: string;
   currency: string;
-  available: number;
+  totalValue: number;
+  holdings: HoldingEntry[];
 }
 
 /** Normalised trading pair returned by the exchange API. */
@@ -435,6 +445,13 @@ export interface OrdersResponse {
   exchange: string;
   orders: OrderResponse[];
 }
+
+/** Fiat currency name lookup for base currency holdings. */
+export const CURRENCY_NAMES: Record<string, string> = {
+  USD: 'US Dollar',
+  AUD: 'Australian Dollar',
+  USDT: 'Tether',
+};
 
 /** Coin name lookup for normalising pair responses. */
 export const COIN_NAMES: Record<string, string> = {
@@ -472,7 +489,7 @@ export interface DemoOrderRecord {
   sub: string;
   /** Unique order ID (sort key). */
   orderId: string;
-  /** Trading pair (e.g. 'BTC/USD'). */
+  /** Coin ticker (e.g. 'BTC'). */
   pair: string;
   /** Order side. */
   side: 'buy' | 'sell';
@@ -490,22 +507,20 @@ export interface DemoOrderRecord {
   createdAt: string;
 }
 
-/** Available demo trading pair. */
-export interface DemoPair {
-  /** Pair symbol (e.g. 'BTC/USD'). */
-  symbol: string;
-  /** Base asset ticker (e.g. 'BTC'). */
-  base: string;
-  /** Quote asset ticker (e.g. 'USD'). */
-  quote: string;
+/** Available demo coin. */
+export interface DemoCoin {
+  /** Coin ticker (e.g. 'BTC'). */
+  ticker: string;
+  /** Human-readable coin name. */
+  name: string;
 }
 
 /** Default starting USD balance for new demo users. */
 export const DEFAULT_DEMO_BALANCE = 1000;
 
-/** Available trading pairs in demo mode. */
-export const DEMO_PAIRS: DemoPair[] = [
-  { symbol: 'BTC/USD', base: 'BTC', quote: 'USD' },
+/** Available coins in demo mode. */
+export const DEMO_COINS: DemoCoin[] = [
+  { ticker: 'BTC', name: 'Bitcoin' },
 ];
 
 /** Binance ticker API endpoint for BTC price (USDT ≈ USD for demo). */

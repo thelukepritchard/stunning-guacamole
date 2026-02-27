@@ -80,23 +80,23 @@ describe('demo getBalance', () => {
 
 describe('demo getPairs', () => {
   /**
-   * Should return 200 with the list of demo pairs.
+   * Should return 200 with the list of demo coins.
    */
-  it('should return 200 with demo pairs', async () => {
+  it('should return 200 with demo coins', async () => {
     const result = await getPairs(buildEvent());
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.pairs).toBeDefined();
-    expect(Array.isArray(body.pairs)).toBe(true);
-    expect(body.pairs.length).toBeGreaterThan(0);
-    expect(body.pairs[0].symbol).toBe('BTC/USD');
+    expect(body.coins).toBeDefined();
+    expect(Array.isArray(body.coins)).toBe(true);
+    expect(body.coins.length).toBeGreaterThan(0);
+    expect(body.coins[0].ticker).toBe('BTC');
   });
 });
 
 // ─── placeOrder ───────────────────────────────────────────────────────────────
 
 describe('demo placeOrder', () => {
-  const validBody = { sub: 'user-123', pair: 'BTC/USD', side: 'buy', size: 0.01 };
+  const validBody = { sub: 'user-123', pair: 'BTC', side: 'buy', size: 0.01 };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -204,7 +204,7 @@ describe('demo listOrders', () => {
    * Should return 200 with orders on success.
    */
   it('should return 200 with orders on success', async () => {
-    const orders = [{ orderId: 'o1', pair: 'BTC/USD' }];
+    const orders = [{ orderId: 'o1', pair: 'BTC' }];
     mockDdbSend.mockResolvedValueOnce({ Items: orders });
     const result = await listOrders(subEvent());
     expect(result.statusCode).toBe(200);

@@ -75,22 +75,49 @@ describe('exchange getBalance', () => {
    * Should propagate upstream error status codes.
    */
   it('should propagate upstream error status', async () => {
-    mockFetch.mockResolvedValueOnce(mockFailResponse(503, { error: 'Service unavailable' }));
+    mockFetch
+      .mockResolvedValueOnce(mockFailResponse(503, { error: 'Service unavailable' }))
+      .mockResolvedValueOnce(mockOkResponse({ price: '50000.00' }));
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(503);
   });
 
   /**
-   * Should return 200 with normalised balance response.
+   * Should return holdings with only USD for a new user (0 BTC).
    */
-  it('should return 200 with normalised balance on success', async () => {
-    mockFetch.mockResolvedValueOnce(mockOkResponse({ usd: 1000, btc: 0.5 }));
+  it('should return 1 holding for new user with 0 BTC', async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockOkResponse({ usd: 1000, btc: 0 }))
+      .mockResolvedValueOnce(mockOkResponse({ price: '50000.00' }));
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
     expect(body.exchange).toBe('demo');
-    expect(body.currency).toBe('USD');
-    expect(body.available).toBe(1000);
+    expect(body.currency).toBe('AUD');
+    expect(body.totalValue).toBe(1000);
+    expect(body.holdings).toHaveLength(1);
+    expect(body.holdings[0].asset).toBe('AUD');
+    expect(body.holdings[0].value).toBe(1000);
+  });
+
+  /**
+   * Should return holdings with USD and BTC after trading.
+   */
+  it('should return 2 holdings when user has BTC', async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockOkResponse({ usd: 500, btc: 0.01 }))
+      .mockResolvedValueOnce(mockOkResponse({ price: '50000.00' }));
+    const result = await getBalance(authedEvent());
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.totalValue).toBe(1000);
+    expect(body.holdings).toHaveLength(2);
+    expect(body.holdings[0].asset).toBe('AUD');
+    expect(body.holdings[0].value).toBe(500);
+    expect(body.holdings[1].asset).toBe('BTC');
+    expect(body.holdings[1].name).toBe('Bitcoin');
+    expect(body.holdings[1].price).toBe(50000);
+    expect(body.holdings[1].value).toBe(500);
   });
 });
 
@@ -121,12 +148,13 @@ describe('exchange getPairs', () => {
    */
   it('should return 200 with normalised pairs on success', async () => {
     mockFetch.mockResolvedValueOnce(mockOkResponse({
-      pairs: [{ symbol: 'BTC/USD', base: 'BTC', quote: 'USD' }],
+      coins: [{ ticker: 'BTC', name: 'Bitcoin' }],
     }));
     const result = await getPairs(authedEvent());
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
     expect(body.exchange).toBe('demo');
+    expect(body.baseCurrency).toBe('AUD');
     expect(body.pairs).toHaveLength(1);
     expect(body.pairs[0].coin).toBe('BTC');
     expect(body.pairs[0].coinName).toBe('Bitcoin');
@@ -162,7 +190,7 @@ describe('exchange listOrders', () => {
     mockFetch.mockResolvedValueOnce(mockOkResponse({
       orders: [{
         orderId: 'o1',
-        pair: 'BTC/USD',
+        pair: 'BTC',
         side: 'buy',
         type: 'market',
         size: 0.1,

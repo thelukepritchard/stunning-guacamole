@@ -56,7 +56,7 @@ describe('getPriceHistory', () => {
    */
   it('should return 400 for invalid period', async () => {
     const result = await getPriceHistory(authedEvent({
-      pathParameters: { pair: 'BTC-USDT' },
+      pathParameters: { pair: 'BTC' },
       queryStringParameters: { period: 'bad' },
     }));
     expect(result.statusCode).toBe(400);
@@ -64,7 +64,7 @@ describe('getPriceHistory', () => {
   });
 
   /**
-   * Should normalise BTC-USDT dash format to BTC/USDT.
+   * Should normalise BTC-USDT dash format to BTC.
    */
   it('should normalise dash-separated pair and return 200', async () => {
     mockDdbSend.mockResolvedValueOnce({ Items: [] });
@@ -76,10 +76,10 @@ describe('getPriceHistory', () => {
   });
 
   /**
-   * Should normalise BTCUSDT no-separator format to BTC/USDT.
+   * Should normalise BTCUSDT no-separator format to BTC.
    */
   it('should normalise no-separator pair (BTCUSDT) and return 200', async () => {
-    mockDdbSend.mockResolvedValueOnce({ Items: [{ pair: 'BTC/USDT' }] });
+    mockDdbSend.mockResolvedValueOnce({ Items: [{ pair: 'BTC' }] });
     const result = await getPriceHistory(authedEvent({
       pathParameters: { pair: 'BTCUSDT' },
     }));
@@ -88,12 +88,23 @@ describe('getPriceHistory', () => {
   });
 
   /**
+   * Should pass through a simple coin ticker as-is.
+   */
+  it('should pass through simple coin ticker BTC', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Items: [] });
+    const result = await getPriceHistory(authedEvent({
+      pathParameters: { pair: 'BTC' },
+    }));
+    expect(result.statusCode).toBe(200);
+  });
+
+  /**
    * Should default to 24h period when not specified.
    */
   it('should default to 24h period when period is not provided', async () => {
     mockDdbSend.mockResolvedValueOnce({ Items: [] });
     const result = await getPriceHistory(authedEvent({
-      pathParameters: { pair: 'BTC/USDT' },
+      pathParameters: { pair: 'BTC' },
     }));
     expect(result.statusCode).toBe(200);
   });
@@ -104,7 +115,7 @@ describe('getPriceHistory', () => {
   it.each(['1h', '6h', '24h', '7d', '30d'])('should return 200 for period %s', async (period) => {
     mockDdbSend.mockResolvedValueOnce({ Items: [] });
     const result = await getPriceHistory(authedEvent({
-      pathParameters: { pair: 'BTC/USDT' },
+      pathParameters: { pair: 'BTC' },
       queryStringParameters: { period },
     }));
     expect(result.statusCode).toBe(200);

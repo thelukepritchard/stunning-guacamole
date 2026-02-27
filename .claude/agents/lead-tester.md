@@ -63,6 +63,27 @@ Refer to `src/domains/CLAUDE.md` for domain handler testing patterns, `src/webap
   - All existing tests still pass
   - No regressions were introduced
 
+### Step 5.5: Verify Frontend Changes with Playwright
+
+When the changes involve frontend code (files in `src/webapp/` or `src/website/`), visually verify the changes using the Playwright MCP tools:
+
+1. **Start the dev server** — Run the appropriate dev server (`npm run dev` in the webapp or website directory) in the background.
+2. **Navigate to the affected page** — Use `mcp__playwright__browser_navigate` to open the relevant page (webapp runs on `http://localhost:3000`, website on `http://localhost:3001`).
+3. **Take a screenshot** — Use `mcp__playwright__browser_take_screenshot` to capture the current state of the page.
+4. **Interact and verify** — Use Playwright tools (`browser_click`, `browser_fill_form`, `browser_snapshot`, etc.) to interact with the changed UI elements and confirm they render correctly and behave as expected.
+5. **Check for visual regressions** — Verify that the change looks correct and hasn't broken surrounding UI elements.
+6. **Close the browser** — Use `mcp__playwright__browser_close` when done.
+
+If you encounter an authentication screen, log in with email `lukepritchard95@gmail.com` and password `Jordan1701!`.
+
+Focus your Playwright verification on:
+- New or modified UI components render without errors
+- Conditional UI elements (warnings, alerts, toggles) appear/disappear correctly based on state
+- Form inputs accept expected values and show appropriate validation messages
+- Layout is not broken by the changes
+
+If the dev server fails to start or Playwright tools are unavailable, note this in your report and skip this step.
+
 ### Step 6: Report Results
 - Provide a clear summary:
   - **Test Run Results**: Total / Passed / Failed / Skipped

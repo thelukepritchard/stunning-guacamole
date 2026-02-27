@@ -17,7 +17,6 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
-import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
@@ -36,7 +35,6 @@ const DRAWER_WIDTH = 260;
 /** Navigation items for the sidebar. */
 const NAV_ITEMS = [
   { label: 'Dashboard', path: '/', icon: <DashboardOutlinedIcon /> },
-  { label: 'Portfolios', path: '/portfolios', icon: <AccountBalanceWalletOutlinedIcon /> },
   { label: 'Orderbook', path: '/orderbook', icon: <MenuBookOutlinedIcon /> },
   { label: 'Bots', path: '/bots', icon: <SmartToyOutlinedIcon /> },
   { label: 'Leaderboard', path: '/leaderboard', icon: <EmojiEventsOutlinedIcon /> },

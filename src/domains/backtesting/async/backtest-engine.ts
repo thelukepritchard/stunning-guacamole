@@ -190,7 +190,7 @@ function calculatePairPnl(
  * Fetches all price history records for a pair within a time window.
  * Handles pagination for large result sets.
  *
- * @param pair - The trading pair (e.g. 'BTC/USDT').
+ * @param pair - The coin ticker (e.g. 'BTC').
  * @param windowStart - ISO timestamp of window start.
  * @param windowEnd - ISO timestamp of window end.
  * @returns Array of price history records sorted chronologically.

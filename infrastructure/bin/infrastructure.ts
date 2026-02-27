@@ -115,6 +115,7 @@ class InfrastructureStack extends cdk.Stack {
       authorizer: restApi.authorizer,
       botsTable: bots.botsTable,
       indicatorsTopic: market.indicatorsTopic,
+      demoExchangeApiUrl: exchange.demoExchangeApi.url,
     });
 
     // Backtesting — backtest workflow (depends on bots table + price history table)

@@ -12,10 +12,10 @@ const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const PRICE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const SYMBOL = 'BTCUSDT';
-const PAIR = 'BTC/USDT';
+const PAIR = 'BTC';
 
 /**
- * EventBridge-triggered Lambda that fetches BTC/USDT market data from Binance,
+ * EventBridge-triggered Lambda that fetches BTC market data from Binance,
  * calculates technical indicators, and publishes them to SNS.
  *
  * Runs every 1 minute via EventBridge rule.
