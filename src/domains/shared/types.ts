@@ -89,6 +89,12 @@ export interface TradeRecord {
   trigger: TradeTrigger;
   /** Position size used for this trade (if configured). */
   sizing?: SizingConfig;
+  /** Exchange execution outcome — 'filled', 'failed', or 'skipped' (no sizing configured / error). */
+  orderStatus?: 'filled' | 'failed' | 'skipped';
+  /** Demo exchange order ID — links the trade to the exchange order record. */
+  orderId?: string;
+  /** Human-readable reason when orderStatus is 'failed' (e.g. "Insufficient USD balance"). */
+  failReason?: string;
   indicators: IndicatorSnapshot;
   createdAt: string;
 }
@@ -502,7 +508,9 @@ export interface DemoOrderRecord {
   /** Total cost (buy) or proceeds (sell) in quote currency (USD). */
   total: number;
   /** Order status. */
-  status: 'filled' | 'cancelled';
+  status: 'filled' | 'cancelled' | 'failed';
+  /** Rejection reason — populated when status is 'failed' (e.g. "Insufficient USD balance"). */
+  failReason?: string;
   /** ISO timestamp of creation. */
   createdAt: string;
 }

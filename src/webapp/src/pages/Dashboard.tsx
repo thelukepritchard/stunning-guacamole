@@ -73,6 +73,8 @@ interface ApiTradeRecord {
   action: 'buy' | 'sell';
   price: number;
   trigger: string;
+  orderStatus?: 'filled' | 'failed' | 'skipped';
+  failReason?: string;
   createdAt: string;
 }
 
@@ -498,6 +500,7 @@ export default function Dashboard() {
                   <TableCell>Side</TableCell>
                   <TableCell align="right">Price</TableCell>
                   <TableCell>Trigger</TableCell>
+                  <TableCell>Status</TableCell>
                   <TableCell>Bot</TableCell>
                 </TableRow>
               </TableHead>
@@ -521,6 +524,26 @@ export default function Dashboard() {
                     </TableCell>
                     <TableCell>
                       <Chip label={trade.trigger.replace('_', ' ')} size="small" variant="outlined" />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={
+                          trade.orderStatus === 'failed'
+                            ? `Failed${trade.failReason ? ` — ${trade.failReason}` : ''}`
+                            : trade.orderStatus === 'skipped'
+                              ? 'Skipped'
+                              : 'Filled'
+                        }
+                        size="small"
+                        color={
+                          trade.orderStatus === 'failed'
+                            ? 'error'
+                            : trade.orderStatus === 'skipped'
+                              ? 'warning'
+                              : 'success'
+                        }
+                        variant="outlined"
+                      />
                     </TableCell>
                     <TableCell>{botNameMap.get(trade.botId) ?? trade.botId.slice(0, 8)}</TableCell>
                   </TableRow>

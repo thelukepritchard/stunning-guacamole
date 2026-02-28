@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import Alert from '@mui/material/Alert';
 import Avatar from '@mui/material/Avatar';
@@ -83,24 +83,29 @@ export default function TraderProfile() {
 
   const [profile, setProfile] = useState<TraderProfileData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('7d');
+  const initialLoadDone = useRef(false);
 
   /** Fetch the trader's profile data for the selected period. */
   const fetchProfile = useCallback(async () => {
     if (!username) return;
     try {
-      setLoading(true);
+      if (!initialLoadDone.current) setLoading(true);
+      else setChartLoading(true);
       setError(null);
       const data = await request<TraderProfileData>(
         'GET',
         `/analytics/leaderboard/${encodeURIComponent(username)}?period=${period}`,
       );
       setProfile(data);
+      initialLoadDone.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load trader profile');
     } finally {
       setLoading(false);
+      setChartLoading(false);
     }
   }, [request, username, period]);
 
@@ -272,20 +277,23 @@ export default function TraderProfile() {
                   Net P&L over time
                 </Typography>
               </Box>
-              <ToggleButtonGroup
-                value={period}
-                exclusive
-                onChange={(_, v) => { if (v) setPeriod(v as Period); }}
-                size="small"
-              >
-                {PERIODS.map((p) => (
-                  <ToggleButton key={p} value={p}>
-                    {p}
-                  </ToggleButton>
-                ))}
-              </ToggleButtonGroup>
+              <Stack direction="row" alignItems="center" spacing={1}>
+                {chartLoading && <CircularProgress size={18} />}
+                <ToggleButtonGroup
+                  value={period}
+                  exclusive
+                  onChange={(_, v) => { if (v) setPeriod(v as Period); }}
+                  size="small"
+                >
+                  {PERIODS.map((p) => (
+                    <ToggleButton key={p} value={p}>
+                      {p}
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+              </Stack>
             </Stack>
-            <Box sx={{ width: '100%' }}>
+            <Box sx={{ width: '100%', opacity: chartLoading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
               <LineChart
                 height={350}
                 xAxis={[

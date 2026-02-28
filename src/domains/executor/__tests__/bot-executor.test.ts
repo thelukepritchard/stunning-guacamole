@@ -410,11 +410,10 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     });
     mockOneBotFlow(bot, true);
 
-    // fetch is called once — the POST to place-order
+    // fetch is called once — the POST to place-order returns a filled order
     mockFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({}),
-      text: async () => '',
+      json: async () => ({ orderId: 'order-1', status: 'filled' }),
     } as Response);
 
     const indicators = buildIndicators(50_000);
@@ -432,9 +431,12 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     // $500 / $50,000 = 0.01 BTC
     expect(body.size).toBeCloseTo(0.01);
 
-    // Trade must still be recorded
+    // Trade must still be recorded with orderStatus and orderId
     const { PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { PutCommand: jest.Mock };
     expect(PutCommand).toHaveBeenCalledTimes(1);
+    const tradeItem = PutCommand.mock.calls[0][0].Item;
+    expect(tradeItem.orderStatus).toBe('filled');
+    expect(tradeItem.orderId).toBe('order-1');
   });
 
   /**
@@ -454,11 +456,10 @@ describe('bot-executor — executeOnExchange and sizing', () => {
       json: async () => ({ usd: 2000, btc: 0.1 }),
     } as Response);
 
-    // Second fetch: POST place-order
+    // Second fetch: POST place-order returns filled order
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({}),
-      text: async () => '',
+      json: async () => ({ orderId: 'order-2', status: 'filled' }),
     } as Response);
 
     const indicators = buildIndicators(50_000);
@@ -498,11 +499,10 @@ describe('bot-executor — executeOnExchange and sizing', () => {
       json: async () => ({ usd: 0, btc: 0.5 }),
     } as Response);
 
-    // Place order
+    // Place order returns filled
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({}),
-      text: async () => '',
+      json: async () => ({ orderId: 'order-3', status: 'filled' }),
     } as Response);
 
     const indicators = buildIndicators(50_000);
@@ -538,40 +538,45 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     // Only the balance GET should have been called — no POST for the order
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const { PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { PutCommand: jest.Mock };
-    // Trade is still recorded even when order is skipped
+    // Trade is still recorded even when order is skipped, with orderStatus = 'skipped'
     expect(PutCommand).toHaveBeenCalledTimes(1);
+    const tradeItem = PutCommand.mock.calls[0][0].Item;
+    expect(tradeItem.orderStatus).toBe('skipped');
+    expect(tradeItem.orderId).toBeUndefined();
   });
 
   /**
-   * When placeExchangeOrder receives a non-ok HTTP response, it must log the
-   * error but NOT throw — the trade record should still be written.
+   * When the exchange returns a failed order (insufficient balance), the trade
+   * should still be recorded with orderStatus 'failed'.
    */
-  it('should record trade even when the exchange order API returns an error', async () => {
+  it('should record trade with failed orderStatus when exchange returns failed order', async () => {
     const bot = buildBot({
       lastAction: undefined,
       buySizing: { type: 'fixed', value: 100 },
     });
     mockOneBotFlow(bot, true);
 
-    // POST to place-order fails with 500
+    // POST to place-order returns a failed order
     mockFetch.mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: async () => 'Internal Server Error',
+      ok: true,
+      json: async () => ({ orderId: 'order-fail-1', status: 'failed', failReason: 'Insufficient USD balance' }),
     } as Response);
 
     const indicators = buildIndicators(50_000);
     await handler(buildSnsEvent(indicators));
 
-    // Trade must still be recorded despite the exchange error
+    // Trade must still be recorded with failed orderStatus
     const { PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { PutCommand: jest.Mock };
     expect(PutCommand).toHaveBeenCalledTimes(1);
+    const tradeItem = PutCommand.mock.calls[0][0].Item;
+    expect(tradeItem.orderStatus).toBe('failed');
+    expect(tradeItem.orderId).toBe('order-fail-1');
   });
 
   /**
    * When fetchDemoBalance returns a non-ok response, calculateOrderSize throws.
    * executeOnExchange catches the error internally — the trade should still be
-   * recorded and the handler must not throw.
+   * recorded with orderStatus 'skipped' and the handler must not throw.
    */
   it('should still record trade when fetchDemoBalance fails', async () => {
     const bot = buildBot({
@@ -599,9 +604,491 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     const indicators = buildIndicators(50_000);
     await expect(handler(buildSnsEvent(indicators))).resolves.toBeUndefined();
 
-    // Trade should still be recorded despite exchange failure
+    // Trade should still be recorded with skipped orderStatus
     const { PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { PutCommand: jest.Mock };
     expect(PutCommand).toHaveBeenCalledTimes(1);
+    const tradeItem = PutCommand.mock.calls[0][0].Item;
+    expect(tradeItem.orderStatus).toBe('skipped');
+  });
+});
+
+// ─── executeOnceAndWait — order-not-filled revert ────────────────────────────
+//
+// When the exchange order is not filled (status 'failed' or 'skipped'), the
+// handler must revert the lastAction claim so the bot can retry on the next
+// tick. The revert is an additional UpdateCommand after the PutCommand.
+//
+// DDB call order when order is not filled (bot.lastAction === undefined):
+//   1. QueryCommand  — GSI page
+//   2. GetCommand    — strongly-consistent bot fetch
+//   3. UpdateCommand — conditional SET lastAction (claimed)
+//   4. PutCommand    — trade record
+//   5. UpdateCommand — REMOVE lastAction  (revert, because order not filled)
+//
+// When bot.lastAction was previously set (e.g. 'buy'):
+//   5. UpdateCommand — SET lastAction = :prev  (restore old value)
+
+describe('bot-executor — executeOnceAndWait order-not-filled revert', () => {
+  let mockFetch: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+
+    const { QueryCommand, GetCommand, PutCommand, UpdateCommand } = jest.requireMock(
+      '@aws-sdk/lib-dynamodb',
+    ) as {
+      QueryCommand: jest.Mock;
+      GetCommand: jest.Mock;
+      PutCommand: jest.Mock;
+      UpdateCommand: jest.Mock;
+    };
+    QueryCommand.mockImplementation((params: object) => ({ ...params, _type: 'Query' }));
+    GetCommand.mockImplementation((params: object) => ({ ...params, _type: 'Get' }));
+    PutCommand.mockImplementation((params: object) => ({ ...params, _type: 'Put' }));
+    UpdateCommand.mockImplementation((params: object) => ({ ...params, _type: 'Update' }));
+
+    process.env.BOTS_TABLE_NAME = 'bots-table';
+    process.env.TRADES_TABLE_NAME = 'trades-table';
+    process.env.DEMO_EXCHANGE_API_URL = 'https://demo.example.com/';
+
+    mockFetch = jest.spyOn(global, 'fetch');
+  });
+
+  afterEach(() => {
+    mockFetch.mockRestore();
+  });
+
+  /**
+   * When a buy order returns status 'failed' and the bot had no prior lastAction
+   * (undefined), the handler must:
+   *  - still record the trade (PutCommand) with orderStatus 'failed'
+   *  - call REMOVE lastAction (5th UpdateCommand) to revert the claim
+   *  - NOT call updateEntryPrice (which would be a 6th UpdateCommand)
+   */
+  it('should REMOVE lastAction when order fails on a fresh bot (no prior lastAction)', async () => {
+    const bot = buildBot({
+      lastAction: undefined,
+      buySizing: { type: 'fixed', value: 100 },
+    });
+
+    // 1. GSI page
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: bot.sub, botId: bot.botId }], LastEvaluatedKey: undefined });
+    // 2. Get
+    mockSend.mockResolvedValueOnce({ Item: bot });
+    // 3. Conditional SET lastAction — succeeds
+    mockSend.mockResolvedValueOnce({});
+    // 4. PutCommand — trade record
+    mockSend.mockResolvedValueOnce({});
+    // 5. UpdateCommand — REMOVE lastAction (revert)
+    mockSend.mockResolvedValueOnce({});
+
+    // Exchange order returns failed
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ orderId: 'o-fail', status: 'failed', failReason: 'Insufficient balance' }),
+    } as Response);
+
+    await handler(buildSnsEvent(buildIndicators(50_000)));
+
+    const { UpdateCommand, PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as {
+      UpdateCommand: jest.Mock;
+      PutCommand: jest.Mock;
+    };
+
+    // Trade must be recorded with failed orderStatus
+    expect(PutCommand).toHaveBeenCalledTimes(1);
+    expect(PutCommand.mock.calls[0][0].Item.orderStatus).toBe('failed');
+
+    // UpdateCommand call sequence: [0] conditional claim, [1] revert REMOVE
+    // There must be exactly 2 UpdateCommand calls — no entryPrice update
+    expect(UpdateCommand).toHaveBeenCalledTimes(2);
+
+    // The second UpdateCommand must use REMOVE lastAction (not SET)
+    const revertCall = UpdateCommand.mock.calls[1][0] as {
+      UpdateExpression: string;
+      ExpressionAttributeValues?: Record<string, unknown>;
+    };
+    expect(revertCall.UpdateExpression).toBe('REMOVE lastAction');
+    // A REMOVE expression must not provide ExpressionAttributeValues
+    expect(revertCall.ExpressionAttributeValues).toBeUndefined();
+  });
+
+  /**
+   * When a sell order returns status 'failed' and the bot's prior lastAction was
+   * 'buy', the handler must restore lastAction to 'buy' (SET lastAction = :prev)
+   * rather than removing it.
+   */
+  it('should restore prior lastAction (SET lastAction = prev) when order fails after a buy', async () => {
+    const bot = buildBot({
+      lastAction: 'buy',
+      buyQuery: ALWAYS_FALSE_QUERY,
+      sellQuery: ALWAYS_TRUE_QUERY,
+      sellSizing: { type: 'fixed', value: 100 },
+    });
+
+    // 1. GSI page
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: bot.sub, botId: bot.botId }], LastEvaluatedKey: undefined });
+    // 2. Get
+    mockSend.mockResolvedValueOnce({ Item: bot });
+    // 3. Conditional SET lastAction = 'sell' — succeeds
+    mockSend.mockResolvedValueOnce({});
+    // 4. PutCommand — trade record
+    mockSend.mockResolvedValueOnce({});
+    // 5. UpdateCommand — SET lastAction = 'buy' (revert to previous)
+    mockSend.mockResolvedValueOnce({});
+
+    // Exchange order returns failed
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ orderId: 'o-fail-2', status: 'failed', failReason: 'Insufficient BTC' }),
+    } as Response);
+
+    await handler(buildSnsEvent(buildIndicators(50_000)));
+
+    const { UpdateCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { UpdateCommand: jest.Mock };
+
+    // Exactly 2 UpdateCommand calls: [0] claim, [1] revert
+    expect(UpdateCommand).toHaveBeenCalledTimes(2);
+
+    // The revert call must SET lastAction back to 'buy'
+    const revertCall = UpdateCommand.mock.calls[1][0] as {
+      UpdateExpression: string;
+      ExpressionAttributeValues: Record<string, unknown>;
+    };
+    expect(revertCall.UpdateExpression).toBe('SET lastAction = :prev');
+    expect(revertCall.ExpressionAttributeValues[':prev']).toBe('buy');
+  });
+
+  /**
+   * When the exchange order is skipped (e.g. no sizing), the handler must
+   * also revert the lastAction claim via REMOVE lastAction (skipped !== 'filled').
+   */
+  it('should REMOVE lastAction when order is skipped (no sizing configured)', async () => {
+    const bot = buildBot({
+      lastAction: undefined,
+      buySizing: undefined, // No sizing — order will be skipped
+    });
+
+    // 1. GSI page
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: bot.sub, botId: bot.botId }], LastEvaluatedKey: undefined });
+    // 2. Get
+    mockSend.mockResolvedValueOnce({ Item: bot });
+    // 3. Conditional SET lastAction — succeeds
+    mockSend.mockResolvedValueOnce({});
+    // 4. PutCommand — trade record
+    mockSend.mockResolvedValueOnce({});
+    // 5. UpdateCommand — REMOVE lastAction (revert)
+    mockSend.mockResolvedValueOnce({});
+
+    await handler(buildSnsEvent(buildIndicators(50_000)));
+
+    const { UpdateCommand, PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as {
+      UpdateCommand: jest.Mock;
+      PutCommand: jest.Mock;
+    };
+
+    // Trade recorded with skipped orderStatus
+    expect(PutCommand).toHaveBeenCalledTimes(1);
+    expect(PutCommand.mock.calls[0][0].Item.orderStatus).toBe('skipped');
+
+    // 2 UpdateCommands: claim + revert. No entryPrice update.
+    expect(UpdateCommand).toHaveBeenCalledTimes(2);
+    const revertCall = UpdateCommand.mock.calls[1][0] as { UpdateExpression: string };
+    expect(revertCall.UpdateExpression).toBe('REMOVE lastAction');
+  });
+
+  /**
+   * When the exchange order is filled, the handler must NOT revert lastAction,
+   * and MUST call updateEntryPrice (a 3rd UpdateCommand). This is a regression
+   * guard for the filled happy path.
+   */
+  it('should update entryPrice and NOT revert lastAction when order is filled', async () => {
+    const bot = buildBot({
+      lastAction: undefined,
+      buySizing: { type: 'fixed', value: 500 },
+    });
+
+    // 5 mocks: GSI, Get, conditional-update, PutCommand, entryPrice-update
+    mockOneBotFlow(bot, true);
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ orderId: 'o-ok', status: 'filled' }),
+    } as Response);
+
+    await handler(buildSnsEvent(buildIndicators(50_000)));
+
+    const { UpdateCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { UpdateCommand: jest.Mock };
+
+    // Exactly 2 UpdateCommands: [0] claim, [1] entryPrice SET
+    expect(UpdateCommand).toHaveBeenCalledTimes(2);
+
+    // The second UpdateCommand must SET entryPrice, not REMOVE lastAction
+    const entryPriceCall = UpdateCommand.mock.calls[1][0] as {
+      UpdateExpression: string;
+      ExpressionAttributeValues: Record<string, unknown>;
+    };
+    expect(entryPriceCall.UpdateExpression).toBe('SET entryPrice = :price');
+    expect(entryPriceCall.ExpressionAttributeValues[':price']).toBe(50_000);
+  });
+});
+
+// ─── tryConditionCooldownAction — order-not-filled revert ─────────────────────
+//
+// When the exchange order is not filled under condition_cooldown mode, the
+// handler must:
+//   - With cooldown: REMOVE the cooldown timestamp so the bot can retry
+//   - Without cooldown: simply not call updateEntryPrice
+
+describe('bot-executor — tryConditionCooldownAction order-not-filled revert', () => {
+  let mockFetch: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+
+    const { QueryCommand, GetCommand, PutCommand, UpdateCommand } = jest.requireMock(
+      '@aws-sdk/lib-dynamodb',
+    ) as {
+      QueryCommand: jest.Mock;
+      GetCommand: jest.Mock;
+      PutCommand: jest.Mock;
+      UpdateCommand: jest.Mock;
+    };
+    QueryCommand.mockImplementation((params: object) => ({ ...params, _type: 'Query' }));
+    GetCommand.mockImplementation((params: object) => ({ ...params, _type: 'Get' }));
+    PutCommand.mockImplementation((params: object) => ({ ...params, _type: 'Put' }));
+    UpdateCommand.mockImplementation((params: object) => ({ ...params, _type: 'Update' }));
+
+    process.env.BOTS_TABLE_NAME = 'bots-table';
+    process.env.TRADES_TABLE_NAME = 'trades-table';
+    process.env.DEMO_EXCHANGE_API_URL = 'https://demo.example.com/';
+
+    mockFetch = jest.spyOn(global, 'fetch');
+  });
+
+  afterEach(() => {
+    mockFetch.mockRestore();
+  });
+
+  /**
+   * condition_cooldown mode with cooldownMinutes set: when the order fails,
+   * the handler must revert the cooldown timestamp via REMOVE #cd. This
+   * ensures the bot can retry on the next tick.
+   *
+   * DDB call order (cooldown path, order failed):
+   *   1. QueryCommand  — GSI page
+   *   2. GetCommand    — bot fetch
+   *   3. UpdateCommand — conditional SET buyCooldownUntil (claimed)
+   *   4. PutCommand    — trade record (orderStatus: failed)
+   *   5. UpdateCommand — REMOVE buyCooldownUntil (revert)
+   *   (no entryPrice update)
+   */
+  it('should REMOVE cooldown timestamp when order fails under condition_cooldown with cooldown', async () => {
+    const bot = buildBot({
+      executionMode: 'condition_cooldown',
+      buyQuery: ALWAYS_TRUE_QUERY,
+      sellQuery: undefined,
+      buySizing: { type: 'fixed', value: 100 },
+      cooldownMinutes: 5,
+      buyCooldownUntil: undefined, // not in cooldown — eligible to fire
+    });
+
+    // 1. GSI page
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: bot.sub, botId: bot.botId }], LastEvaluatedKey: undefined });
+    // 2. Get
+    mockSend.mockResolvedValueOnce({ Item: bot });
+    // 3. Conditional SET buyCooldownUntil — succeeds
+    mockSend.mockResolvedValueOnce({});
+    // 4. PutCommand — trade record
+    mockSend.mockResolvedValueOnce({});
+    // 5. UpdateCommand — REMOVE buyCooldownUntil (revert)
+    mockSend.mockResolvedValueOnce({});
+
+    // Exchange order returns failed
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ orderId: 'o-cd-fail', status: 'failed', failReason: 'Insufficient balance' }),
+    } as Response);
+
+    await handler(buildSnsEvent(buildIndicators(50_000)));
+
+    const { UpdateCommand, PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as {
+      UpdateCommand: jest.Mock;
+      PutCommand: jest.Mock;
+    };
+
+    // Trade recorded with failed orderStatus
+    expect(PutCommand).toHaveBeenCalledTimes(1);
+    expect(PutCommand.mock.calls[0][0].Item.orderStatus).toBe('failed');
+
+    // 2 UpdateCommand calls: [0] SET cooldown, [1] REMOVE cooldown (revert)
+    // No entryPrice update.
+    expect(UpdateCommand).toHaveBeenCalledTimes(2);
+
+    // Revert must REMOVE the buyCooldownUntil field
+    const revertCall = UpdateCommand.mock.calls[1][0] as {
+      UpdateExpression: string;
+      ExpressionAttributeNames: Record<string, string>;
+    };
+    expect(revertCall.UpdateExpression).toBe('REMOVE #cd');
+    expect(revertCall.ExpressionAttributeNames['#cd']).toBe('buyCooldownUntil');
+  });
+
+  /**
+   * condition_cooldown mode with cooldownMinutes set: when the order is filled,
+   * the cooldown must NOT be reverted and entryPrice must be updated.
+   * Regression guard for the filled happy path.
+   *
+   * DDB call order (cooldown path, order filled):
+   *   1. QueryCommand  — GSI page
+   *   2. GetCommand    — bot fetch
+   *   3. UpdateCommand — conditional SET buyCooldownUntil (claimed)
+   *   4. PutCommand    — trade record (orderStatus: filled)
+   *   5. UpdateCommand — SET entryPrice = :price
+   */
+  it('should update entryPrice (not revert cooldown) when order is filled under condition_cooldown with cooldown', async () => {
+    const bot = buildBot({
+      executionMode: 'condition_cooldown',
+      buyQuery: ALWAYS_TRUE_QUERY,
+      sellQuery: undefined,
+      buySizing: { type: 'fixed', value: 100 },
+      cooldownMinutes: 5,
+      buyCooldownUntil: undefined,
+    });
+
+    // 1. GSI page
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: bot.sub, botId: bot.botId }], LastEvaluatedKey: undefined });
+    // 2. Get
+    mockSend.mockResolvedValueOnce({ Item: bot });
+    // 3. Conditional SET buyCooldownUntil — succeeds
+    mockSend.mockResolvedValueOnce({});
+    // 4. PutCommand — trade record
+    mockSend.mockResolvedValueOnce({});
+    // 5. UpdateCommand — SET entryPrice
+    mockSend.mockResolvedValueOnce({});
+
+    // Exchange order returns filled
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ orderId: 'o-cd-ok', status: 'filled' }),
+    } as Response);
+
+    await handler(buildSnsEvent(buildIndicators(50_000)));
+
+    const { UpdateCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { UpdateCommand: jest.Mock };
+
+    // 2 UpdateCommands: [0] SET cooldown, [1] SET entryPrice
+    expect(UpdateCommand).toHaveBeenCalledTimes(2);
+
+    const entryPriceCall = UpdateCommand.mock.calls[1][0] as {
+      UpdateExpression: string;
+      ExpressionAttributeValues: Record<string, unknown>;
+    };
+    expect(entryPriceCall.UpdateExpression).toBe('SET entryPrice = :price');
+    expect(entryPriceCall.ExpressionAttributeValues[':price']).toBe(50_000);
+  });
+
+  /**
+   * condition_cooldown mode WITHOUT cooldownMinutes (no cooldown guard): when
+   * the order fails, the handler must record the trade but must NOT call
+   * updateEntryPrice and must NOT make any extra DDB calls (there is no cooldown
+   * timestamp to revert).
+   *
+   * DDB call order (no-cooldown path, order failed):
+   *   1. QueryCommand — GSI page
+   *   2. GetCommand   — bot fetch
+   *   3. PutCommand   — trade record (orderStatus: failed)
+   *   (no additional UpdateCommand — no cooldown to revert, no entryPrice update)
+   */
+  it('should not call updateEntryPrice when order fails under condition_cooldown without cooldown', async () => {
+    const bot = buildBot({
+      executionMode: 'condition_cooldown',
+      buyQuery: ALWAYS_TRUE_QUERY,
+      sellQuery: undefined,
+      buySizing: { type: 'fixed', value: 100 },
+      cooldownMinutes: undefined, // No cooldown configured
+    });
+
+    // 1. GSI page
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: bot.sub, botId: bot.botId }], LastEvaluatedKey: undefined });
+    // 2. Get
+    mockSend.mockResolvedValueOnce({ Item: bot });
+    // 3. PutCommand — trade record (no conditional update before it in no-cooldown path)
+    mockSend.mockResolvedValueOnce({});
+
+    // Exchange order returns failed
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ orderId: 'o-nocd-fail', status: 'failed', failReason: 'Insufficient balance' }),
+    } as Response);
+
+    await handler(buildSnsEvent(buildIndicators(50_000)));
+
+    const { UpdateCommand, PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as {
+      UpdateCommand: jest.Mock;
+      PutCommand: jest.Mock;
+    };
+
+    // Trade recorded with failed orderStatus
+    expect(PutCommand).toHaveBeenCalledTimes(1);
+    expect(PutCommand.mock.calls[0][0].Item.orderStatus).toBe('failed');
+
+    // Zero UpdateCommand calls — no cooldown to revert and no entryPrice update
+    expect(UpdateCommand).not.toHaveBeenCalled();
+  });
+
+  /**
+   * condition_cooldown mode WITHOUT cooldownMinutes: when the order is filled,
+   * the handler must update entryPrice. Regression guard.
+   *
+   * DDB call order (no-cooldown path, order filled):
+   *   1. QueryCommand  — GSI page
+   *   2. GetCommand    — bot fetch
+   *   3. PutCommand    — trade record (orderStatus: filled)
+   *   4. UpdateCommand — SET entryPrice = :price
+   */
+  it('should call updateEntryPrice when order is filled under condition_cooldown without cooldown', async () => {
+    const bot = buildBot({
+      executionMode: 'condition_cooldown',
+      buyQuery: ALWAYS_TRUE_QUERY,
+      sellQuery: undefined,
+      buySizing: { type: 'fixed', value: 100 },
+      cooldownMinutes: undefined,
+    });
+
+    // 1. GSI page
+    mockSend.mockResolvedValueOnce({ Items: [{ sub: bot.sub, botId: bot.botId }], LastEvaluatedKey: undefined });
+    // 2. Get
+    mockSend.mockResolvedValueOnce({ Item: bot });
+    // 3. PutCommand — trade record
+    mockSend.mockResolvedValueOnce({});
+    // 4. UpdateCommand — SET entryPrice
+    mockSend.mockResolvedValueOnce({});
+
+    // Exchange order returns filled
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ orderId: 'o-nocd-ok', status: 'filled' }),
+    } as Response);
+
+    await handler(buildSnsEvent(buildIndicators(50_000)));
+
+    const { UpdateCommand, PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as {
+      UpdateCommand: jest.Mock;
+      PutCommand: jest.Mock;
+    };
+
+    expect(PutCommand).toHaveBeenCalledTimes(1);
+    expect(PutCommand.mock.calls[0][0].Item.orderStatus).toBe('filled');
+
+    // 1 UpdateCommand: SET entryPrice
+    expect(UpdateCommand).toHaveBeenCalledTimes(1);
+    const entryPriceCall = UpdateCommand.mock.calls[0][0] as {
+      UpdateExpression: string;
+      ExpressionAttributeValues: Record<string, unknown>;
+    };
+    expect(entryPriceCall.UpdateExpression).toBe('SET entryPrice = :price');
+    expect(entryPriceCall.ExpressionAttributeValues[':price']).toBe(50_000);
   });
 });
 

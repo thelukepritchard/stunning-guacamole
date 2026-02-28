@@ -2,7 +2,7 @@ import type { SNSEvent } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { evaluateRuleGroup } from '../../shared/rule-evaluator';
-import type { BotAction, BotRecord, IndicatorSnapshot, SizingConfig, TradeTrigger, TradeRecord } from '../../shared/types';
+import type { BotAction, BotRecord, IndicatorSnapshot, SizingConfig, TradeTrigger, TradeRecord, DemoOrderRecord } from '../../shared/types';
 
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const DEMO_EXCHANGE_API_URL = process.env.DEMO_EXCHANGE_API_URL!;
@@ -97,8 +97,16 @@ async function calculateOrderSize(
   return balance.btc * (sizing.value / 100);
 }
 
+/** Result of a demo exchange order placement. */
+interface OrderResult {
+  status: 'filled' | 'failed';
+  orderId?: string;
+  failReason?: string;
+}
+
 /**
  * Places a market order on the demo exchange via the internal API.
+ * Parses the response to determine order outcome (filled or failed).
  * Logs errors but does not throw — exchange execution failures should
  * not prevent trade signal recording.
  *
@@ -106,8 +114,9 @@ async function calculateOrderSize(
  * @param pair - The trading pair (e.g. "BTC").
  * @param side - The order side ("buy" or "sell").
  * @param size - The order size in BTC.
+ * @returns The order result with status and optional orderId.
  */
-async function placeExchangeOrder(sub: string, pair: string, side: BotAction, size: number): Promise<void> {
+async function placeExchangeOrder(sub: string, pair: string, side: BotAction, size: number): Promise<OrderResult> {
   const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/orders`;
   const res = await fetch(url, {
     method: 'POST',
@@ -115,12 +124,23 @@ async function placeExchangeOrder(sub: string, pair: string, side: BotAction, si
     body: JSON.stringify({ sub, pair, side, size }),
   });
 
-  if (!res.ok) {
-    const body = await res.text();
-    console.error('Demo exchange order failed:', { status: res.status, body, sub, pair, side, size });
+  const body = await res.json() as Partial<DemoOrderRecord>;
+  const orderStatus = body.status === 'filled' ? 'filled' as const : 'failed' as const;
+
+  if (orderStatus === 'failed') {
+    console.error('Demo exchange order failed:', { status: res.status, sub, pair, side, size, failReason: body.failReason });
   } else {
-    console.log('Demo exchange order placed:', { sub, pair, side, size });
+    console.log('Demo exchange order placed:', { sub, pair, side, size, orderId: body.orderId });
   }
+
+  return { status: orderStatus, orderId: body.orderId, failReason: body.failReason };
+}
+
+/** Result of exchange execution, including order tracking fields. */
+interface ExchangeResult {
+  orderStatus: 'filled' | 'failed' | 'skipped';
+  orderId?: string;
+  failReason?: string;
 }
 
 /**
@@ -134,30 +154,33 @@ async function placeExchangeOrder(sub: string, pair: string, side: BotAction, si
  * @param bot - The bot record.
  * @param action - The trade action (buy or sell).
  * @param price - The current market price.
+ * @returns The exchange execution result with orderStatus and optional orderId.
  */
-async function executeOnExchange(bot: BotRecord, action: BotAction, price: number): Promise<void> {
+async function executeOnExchange(bot: BotRecord, action: BotAction, price: number): Promise<ExchangeResult> {
   const sizing = action === 'buy' ? bot.buySizing : bot.sellSizing;
 
   if (!sizing) {
     console.warn('No sizing configured, skipping exchange execution:', { botId: bot.botId, action });
-    return;
+    return { orderStatus: 'skipped' };
   }
 
   if (!price || price <= 0) {
     console.warn('Invalid price for order size calculation:', { botId: bot.botId, action, price });
-    return;
+    return { orderStatus: 'skipped' };
   }
 
   try {
     const size = await calculateOrderSize(bot.sub, action, sizing, price);
     if (size <= 0) {
       console.warn('Calculated order size is zero or negative, skipping:', { botId: bot.botId, action, size });
-      return;
+      return { orderStatus: 'skipped' };
     }
 
-    await placeExchangeOrder(bot.sub, bot.pair, action, size);
+    const result = await placeExchangeOrder(bot.sub, bot.pair, action, size);
+    return { orderStatus: result.status, orderId: result.orderId, failReason: result.failReason };
   } catch (err) {
     console.error('Exchange execution failed:', { botId: bot.botId, action }, err);
+    return { orderStatus: 'skipped' };
   }
 }
 
@@ -169,6 +192,7 @@ async function executeOnExchange(bot: BotRecord, action: BotAction, price: numbe
  * @param trigger - What caused the trade (rule, stop_loss, take_profit).
  * @param indicators - The current indicator snapshot.
  * @param sizing - Optional position sizing configuration.
+ * @param exchangeResult - Optional exchange execution result (orderStatus + orderId).
  */
 async function recordTrade(
   bot: BotRecord,
@@ -176,6 +200,7 @@ async function recordTrade(
   trigger: TradeTrigger,
   indicators: IndicatorSnapshot,
   sizing?: SizingConfig,
+  exchangeResult?: ExchangeResult,
 ): Promise<void> {
   const trade: TradeRecord = {
     botId: bot.botId,
@@ -190,6 +215,9 @@ async function recordTrade(
   };
 
   if (sizing) trade.sizing = sizing;
+  if (exchangeResult?.orderStatus) trade.orderStatus = exchangeResult.orderStatus;
+  if (exchangeResult?.orderId) trade.orderId = exchangeResult.orderId;
+  if (exchangeResult?.failReason) trade.failReason = exchangeResult.failReason;
 
   await ddbDoc.send(new PutCommand({
     TableName: process.env.TRADES_TABLE_NAME!,
@@ -197,7 +225,7 @@ async function recordTrade(
   }));
 
   console.log(`${action.charAt(0).toUpperCase() + action.slice(1)} trade signal recorded:`, {
-    botId: bot.botId, price: indicators.price, trigger,
+    botId: bot.botId, price: indicators.price, trigger, orderStatus: exchangeResult?.orderStatus,
   });
 }
 
@@ -339,9 +367,28 @@ async function executeOnceAndWait(bot: BotRecord, action: BotAction, indicators:
   });
 
   if (claimed) {
-    await executeOnExchange(bot, action, indicators.price);
-    await recordTrade(bot, action, trigger, indicators, sizing);
-    await updateEntryPrice(bot, action, indicators.price);
+    const exchangeResult = await executeOnExchange(bot, action, indicators.price);
+    await recordTrade(bot, action, trigger, indicators, sizing, exchangeResult);
+
+    if (exchangeResult.orderStatus === 'filled') {
+      await updateEntryPrice(bot, action, indicators.price);
+    } else {
+      // Order was not filled — revert the lastAction claim so the bot can retry
+      if (bot.lastAction) {
+        await ddbDoc.send(new UpdateCommand({
+          TableName: process.env.BOTS_TABLE_NAME!,
+          Key: { sub: bot.sub, botId: bot.botId },
+          UpdateExpression: 'SET lastAction = :prev',
+          ExpressionAttributeValues: { ':prev': bot.lastAction },
+        }));
+      } else {
+        await ddbDoc.send(new UpdateCommand({
+          TableName: process.env.BOTS_TABLE_NAME!,
+          Key: { sub: bot.sub, botId: bot.botId },
+          UpdateExpression: 'REMOVE lastAction',
+        }));
+      }
+    }
   }
 }
 
@@ -382,18 +429,33 @@ async function tryConditionCooldownAction(
       },
     });
     if (claimed) {
-      await executeOnExchange(bot, action, indicators.price);
-      await recordTrade(bot, action, trigger, indicators, sizing);
+      const exchangeResult = await executeOnExchange(bot, action, indicators.price);
+      await recordTrade(bot, action, trigger, indicators, sizing, exchangeResult);
+
+      if (exchangeResult.orderStatus !== 'filled') {
+        // Order not filled — revert cooldown so the bot can retry
+        await ddbDoc.send(new UpdateCommand({
+          TableName: process.env.BOTS_TABLE_NAME!,
+          Key: { sub: bot.sub, botId: bot.botId },
+          UpdateExpression: 'REMOVE #cd',
+          ExpressionAttributeNames: { '#cd': cooldownField },
+        }));
+        return false;
+      }
+
       await updateEntryPrice(bot, action, indicators.price);
       return true;
     }
     return false;
   }
 
-  await executeOnExchange(bot, action, indicators.price);
-  await recordTrade(bot, action, trigger, indicators, sizing);
-  await updateEntryPrice(bot, action, indicators.price);
-  return true;
+  const exchangeResult = await executeOnExchange(bot, action, indicators.price);
+  await recordTrade(bot, action, trigger, indicators, sizing, exchangeResult);
+
+  if (exchangeResult.orderStatus === 'filled') {
+    await updateEntryPrice(bot, action, indicators.price);
+  }
+  return exchangeResult.orderStatus === 'filled';
 }
 
 /**

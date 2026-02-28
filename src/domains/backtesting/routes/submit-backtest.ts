@@ -60,22 +60,22 @@ export async function submitBacktest(event: APIGatewayProxyEvent): Promise<APIGa
     return jsonResponse(409, { error: 'A backtest is already in progress for this bot' });
   }
 
-  // Validate price history has >= 7 days of data for the bot's pair.
+  // Validate price history has >= 3 days of data for the bot's pair.
   // We check that at least one record exists in the early portion of the 30-day window
-  // (between windowStart and 7 days ago), confirming the data spans far enough back.
+  // (between windowStart and 3 days ago), confirming the data spans far enough back.
   const now = new Date();
   const windowEnd = now.toISOString();
   const windowStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
 
   const priceCheck = await ddbDoc.send(new QueryCommand({
     TableName: process.env.PRICE_HISTORY_TABLE_NAME!,
-    KeyConditionExpression: '#pair = :pair AND #ts BETWEEN :windowStart AND :sevenDaysAgo',
+    KeyConditionExpression: '#pair = :pair AND #ts BETWEEN :windowStart AND :threeDaysAgo',
     ExpressionAttributeNames: { '#pair': 'pair', '#ts': 'timestamp' },
     ExpressionAttributeValues: {
       ':pair': bot.pair,
       ':windowStart': windowStart,
-      ':sevenDaysAgo': sevenDaysAgo,
+      ':threeDaysAgo': threeDaysAgo,
     },
     ScanIndexForward: false,
     Limit: 1,
@@ -83,7 +83,7 @@ export async function submitBacktest(event: APIGatewayProxyEvent): Promise<APIGa
 
   if (!priceCheck.Items || priceCheck.Items.length === 0) {
     return jsonResponse(400, {
-      error: 'Insufficient price history data. At least 7 days of data is required for backtesting.',
+      error: 'Insufficient price history data. At least 3 days of data is required for backtesting.',
     });
   }
 

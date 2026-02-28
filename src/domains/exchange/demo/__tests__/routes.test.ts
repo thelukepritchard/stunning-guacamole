@@ -175,15 +175,20 @@ describe('demo placeOrder', () => {
   });
 
   /**
-   * Should return 400 on insufficient balance (TransactionCanceledException).
+   * Should return 200 with a failed order record on insufficient balance (TransactionCanceledException).
    */
-  it('should return 400 on insufficient balance', async () => {
+  it('should return 200 with failed order on insufficient balance', async () => {
     mockDdbSend
-      .mockResolvedValueOnce({ Item: { sub: 'user-123', usd: 1, btc: 0 } })
-      .mockRejectedValueOnce(Object.assign(new Error('Transaction cancelled'), { name: 'TransactionCanceledException' }));
+      .mockResolvedValueOnce({ Item: { sub: 'user-123', usd: 1, btc: 0 } }) // ensureBalance Get
+      .mockRejectedValueOnce(Object.assign(new Error('Transaction cancelled'), { name: 'TransactionCanceledException' })) // TransactWrite
+      .mockResolvedValueOnce({}); // PutCommand for failed order
     const result = await placeOrder(buildEvent({ body: JSON.stringify(validBody) }));
-    expect(result.statusCode).toBe(400);
-    expect(JSON.parse(result.body).error).toContain('Insufficient');
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.status).toBe('failed');
+    expect(body.failReason).toContain('Insufficient');
+    expect(body.orderId).toBeDefined();
+    expect(body.side).toBe('buy');
   });
 });
 

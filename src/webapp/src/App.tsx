@@ -3,6 +3,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme';
 import AuthGuard from './components/AuthGuard';
+import GuestGuard from './components/GuestGuard';
 import DashboardLayout from './layouts/DashboardLayout';
 import SignIn from './pages/SignIn';
 import Register from './pages/Register';
@@ -25,8 +26,8 @@ export default function App() {
       <CssBaseline />
       <BrowserRouter>
         <Routes>
-          <Route path="/sign-in" element={<SignIn />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/sign-in" element={<GuestGuard><SignIn /></GuestGuard>} />
+          <Route path="/register" element={<GuestGuard><Register /></GuestGuard>} />
           <Route
             path="/"
             element={

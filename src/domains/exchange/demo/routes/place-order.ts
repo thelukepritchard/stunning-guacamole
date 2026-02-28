@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, TransactWriteCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { jsonResponse } from '../utils';
 import { ensureBalance } from './get-balance';
 import { DEMO_COINS, BINANCE_TICKER_URL } from '../../../shared/types';
@@ -123,7 +123,21 @@ export async function placeOrder(event: APIGatewayProxyEvent): Promise<APIGatewa
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'TransactionCanceledException') {
       const currency = side === 'buy' ? 'USD' : 'BTC';
-      return jsonResponse(400, { error: `Insufficient ${currency} balance` });
+      const failReason = `Insufficient ${currency} balance`;
+
+      // Write a failed order record so the user can see why the order was rejected
+      const failedOrder: DemoOrderRecord = {
+        ...order,
+        status: 'failed',
+        failReason,
+      };
+
+      await ddbDoc.send(new PutCommand({
+        TableName: ORDERS_TABLE,
+        Item: failedOrder,
+      }));
+
+      return jsonResponse(200, failedOrder);
     }
     throw err;
   }

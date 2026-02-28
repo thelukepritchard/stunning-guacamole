@@ -44,6 +44,8 @@ interface ApiTradeRecord {
   action: BotAction;
   price: number;
   indicators: Record<string, number | string>;
+  orderStatus?: 'filled' | 'failed' | 'skipped';
+  failReason?: string;
   createdAt: string;
 }
 
@@ -168,6 +170,7 @@ export default function BotDetail() {
                 <TableCell>Bot</TableCell>
                 <TableCell>Action</TableCell>
                 <TableCell align="right">Price</TableCell>
+                <TableCell>Status</TableCell>
                 <TableCell align="right">RSI (14)</TableCell>
                 <TableCell>MACD Signal</TableCell>
               </TableRow>
@@ -187,6 +190,26 @@ export default function BotDetail() {
                   </TableCell>
                   <TableCell align="right">
                     {typeof trade.price === 'number' ? formatDollar(trade.price) : trade.price}
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={
+                        trade.orderStatus === 'failed'
+                          ? `Failed${trade.failReason ? ` — ${trade.failReason}` : ''}`
+                          : trade.orderStatus === 'skipped'
+                            ? 'Skipped'
+                            : 'Filled'
+                      }
+                      size="small"
+                      color={
+                        trade.orderStatus === 'failed'
+                          ? 'error'
+                          : trade.orderStatus === 'skipped'
+                            ? 'warning'
+                            : 'success'
+                      }
+                      variant="outlined"
+                    />
                   </TableCell>
                   <TableCell align="right">
                     {trade.indicators?.rsi_14 != null ? formatNumber(Number(trade.indicators.rsi_14), 1) : '—'}

@@ -53,7 +53,7 @@ describe('listTrades', () => {
   });
 
   /**
-   * Should return 200 with items on success.
+   * Should return 200 with items on success (no pagination token in response).
    */
   it('should return 200 with items on success', async () => {
     const trade = { botId: 'b1', timestamp: '2024-01-01T00:00:00.000Z', action: 'buy' };
@@ -106,6 +106,67 @@ describe('listTrades', () => {
     expect(params.IndexName).toBe('sub-index');
     expect(params.ExpressionAttributeValues[':sub']).toBe('user-123');
     expect(params.ScanIndexForward).toBe(false);
+  });
+
+  /**
+   * Should include a nextToken in the response when DynamoDB returns a LastEvaluatedKey.
+   */
+  it('should return nextToken when DynamoDB returns LastEvaluatedKey', async () => {
+    const trade = { botId: 'b1', timestamp: '2024-01-01T00:00:00.000Z', action: 'buy' };
+    const lastKey = { sub: 'user-123', botId: 'b1', timestamp: '2024-01-01T00:00:00.000Z' };
+    mockDdbSend.mockResolvedValueOnce({ Items: [trade], LastEvaluatedKey: lastKey });
+    const result = await listTrades(authedEvent());
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.items).toEqual([trade]);
+    expect(body.nextToken).toBeDefined();
+    // The token must be a base64url-encoded JSON of the LastEvaluatedKey.
+    const decoded = JSON.parse(Buffer.from(body.nextToken, 'base64url').toString('utf-8'));
+    expect(decoded).toEqual(lastKey);
+  });
+
+  /**
+   * Should omit nextToken from the response when DynamoDB has no LastEvaluatedKey.
+   */
+  it('should omit nextToken when DynamoDB has no LastEvaluatedKey', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Items: [] });
+    const result = await listTrades(authedEvent());
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.nextToken).toBeUndefined();
+  });
+
+  /**
+   * Should decode a valid nextToken and pass it as ExclusiveStartKey to DynamoDB.
+   */
+  it('should pass ExclusiveStartKey to DynamoDB when nextToken is provided', async () => {
+    const lastKey = { sub: 'user-123', botId: 'b1', timestamp: '2024-01-01T00:00:00.000Z' };
+    const nextToken = Buffer.from(JSON.stringify(lastKey)).toString('base64url');
+    mockDdbSend.mockResolvedValueOnce({ Items: [] });
+    await listTrades(authedEvent({ queryStringParameters: { nextToken } }));
+    const { QueryCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { QueryCommand: jest.Mock };
+    const params = QueryCommand.mock.calls[0][0];
+    expect(params.ExclusiveStartKey).toEqual(lastKey);
+  });
+
+  /**
+   * Should not set ExclusiveStartKey when no nextToken query param is provided.
+   */
+  it('should not set ExclusiveStartKey when nextToken is absent', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Items: [] });
+    await listTrades(authedEvent());
+    const { QueryCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { QueryCommand: jest.Mock };
+    const params = QueryCommand.mock.calls[0][0];
+    expect(params.ExclusiveStartKey).toBeUndefined();
+  });
+
+  /**
+   * Should return 400 when the nextToken query param is not valid base64url-encoded JSON.
+   */
+  it('should return 400 when nextToken is invalid', async () => {
+    const result = await listTrades(authedEvent({ queryStringParameters: { nextToken: '!!!not-valid-base64!!!' } }));
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body).error).toBe('Invalid nextToken');
   });
 });
 
@@ -190,5 +251,87 @@ describe('listBotTrades', () => {
     expect(params.TableName).toBe('trades-table');
     expect(params.ExpressionAttributeValues[':botId']).toBe('b1');
     expect(params.ScanIndexForward).toBe(false);
+  });
+
+  /**
+   * Should include a nextToken in the response when DynamoDB returns a LastEvaluatedKey.
+   */
+  it('should return nextToken when DynamoDB returns LastEvaluatedKey', async () => {
+    const bot = { botId: 'b1', sub: 'user-123' };
+    const trade = { botId: 'b1', timestamp: '2024-01-01T00:00:00.000Z', action: 'sell' };
+    const lastKey = { botId: 'b1', timestamp: '2024-01-01T00:00:00.000Z' };
+    mockDdbSend
+      .mockResolvedValueOnce({ Item: bot })
+      .mockResolvedValueOnce({ Items: [trade], LastEvaluatedKey: lastKey });
+    const result = await listBotTrades(authedEvent({ pathParameters: { botId: 'b1' } }));
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.items).toEqual([trade]);
+    expect(body.nextToken).toBeDefined();
+    // The token must be a base64url-encoded JSON of the LastEvaluatedKey.
+    const decoded = JSON.parse(Buffer.from(body.nextToken, 'base64url').toString('utf-8'));
+    expect(decoded).toEqual(lastKey);
+  });
+
+  /**
+   * Should omit nextToken from the response when DynamoDB has no LastEvaluatedKey.
+   */
+  it('should omit nextToken when DynamoDB has no LastEvaluatedKey', async () => {
+    const bot = { botId: 'b1', sub: 'user-123' };
+    mockDdbSend
+      .mockResolvedValueOnce({ Item: bot })
+      .mockResolvedValueOnce({ Items: [] });
+    const result = await listBotTrades(authedEvent({ pathParameters: { botId: 'b1' } }));
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.nextToken).toBeUndefined();
+  });
+
+  /**
+   * Should decode a valid nextToken and pass it as ExclusiveStartKey to the trades query.
+   */
+  it('should pass ExclusiveStartKey to DynamoDB when nextToken is provided', async () => {
+    const bot = { botId: 'b1', sub: 'user-123' };
+    const lastKey = { botId: 'b1', timestamp: '2024-01-01T00:00:00.000Z' };
+    const nextToken = Buffer.from(JSON.stringify(lastKey)).toString('base64url');
+    mockDdbSend
+      .mockResolvedValueOnce({ Item: bot })
+      .mockResolvedValueOnce({ Items: [] });
+    await listBotTrades(authedEvent({
+      pathParameters: { botId: 'b1' },
+      queryStringParameters: { nextToken },
+    }));
+    const { QueryCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { QueryCommand: jest.Mock };
+    // QueryCommand.mock.calls[0] is the trades query (first QueryCommand constructed).
+    const params = QueryCommand.mock.calls[0][0];
+    expect(params.ExclusiveStartKey).toEqual(lastKey);
+  });
+
+  /**
+   * Should not set ExclusiveStartKey on the trades query when no nextToken is provided.
+   */
+  it('should not set ExclusiveStartKey when nextToken is absent', async () => {
+    const bot = { botId: 'b1', sub: 'user-123' };
+    mockDdbSend
+      .mockResolvedValueOnce({ Item: bot })
+      .mockResolvedValueOnce({ Items: [] });
+    await listBotTrades(authedEvent({ pathParameters: { botId: 'b1' } }));
+    const { QueryCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { QueryCommand: jest.Mock };
+    const params = QueryCommand.mock.calls[0][0];
+    expect(params.ExclusiveStartKey).toBeUndefined();
+  });
+
+  /**
+   * Should return 400 when the nextToken query param is not valid base64url-encoded JSON.
+   */
+  it('should return 400 when nextToken is invalid', async () => {
+    const bot = { botId: 'b1', sub: 'user-123' };
+    mockDdbSend.mockResolvedValueOnce({ Item: bot });
+    const result = await listBotTrades(authedEvent({
+      pathParameters: { botId: 'b1' },
+      queryStringParameters: { nextToken: '!!!not-valid-base64!!!' },
+    }));
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body).error).toBe('Invalid nextToken');
   });
 });
