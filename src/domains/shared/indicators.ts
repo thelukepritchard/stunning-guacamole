@@ -169,13 +169,13 @@ export function calculateBollingerBands(closes: number[]): {
   return { upper, lower, position };
 }
 
-/** Kline (candlestick) data from Binance API. */
+/** Kline (candlestick) data — source-agnostic OHLC candle array. */
 export interface KlineData {
-  /** Array of kline arrays: [openTime, open, high, low, close, volume, ...] */
+  /** Array of candle arrays where close price is at index 4. */
   candles: (string | number)[][];
 }
 
-/** 24h ticker data from Binance API. */
+/** Normalised 24h ticker data — source-agnostic. */
 export interface Ticker24h {
   volume: string;
   priceChangePercent: string;
@@ -185,8 +185,8 @@ export interface Ticker24h {
 /**
  * Master orchestrator that calculates all 16 indicator values from raw market data.
  *
- * @param klines - Kline candlestick data from Binance.
- * @param ticker24h - 24h ticker data from Binance.
+ * @param klines - Kline candlestick data (close at index 4).
+ * @param ticker24h - Normalised 24h ticker data.
  * @returns A complete IndicatorSnapshot.
  */
 export function calculateAllIndicators(klines: KlineData, ticker24h: Ticker24h): IndicatorSnapshot {

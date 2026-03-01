@@ -43,7 +43,7 @@ export async function ensureBalance(sub: string): Promise<DemoBalanceRecord> {
   const now = new Date().toISOString();
   const newBalance: DemoBalanceRecord = {
     sub,
-    usd: DEFAULT_DEMO_BALANCE,
+    aud: DEFAULT_DEMO_BALANCE,
     btc: 0,
     createdAt: now,
     updatedAt: now,

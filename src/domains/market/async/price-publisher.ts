@@ -11,30 +11,61 @@ const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 /** 30 days in seconds — TTL offset for price history records. */
 const PRICE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
-const SYMBOL = 'BTCUSDT';
+/** Kraken pair identifier for BTC/AUD. */
+const SYMBOL = 'XBTAUD';
+
+/** Internal pair identifier used across the platform. */
 const PAIR = 'BTC';
 
 /**
- * EventBridge-triggered Lambda that fetches BTC market data from Binance,
+ * EventBridge-triggered Lambda that fetches BTC/AUD market data from Kraken,
  * calculates technical indicators, and publishes them to SNS.
  *
  * Runs every 1 minute via EventBridge rule.
  */
 export async function handler(): Promise<void> {
-  // Fetch klines (200 x 1-minute candles) and 24h ticker in parallel
-  const [klinesRes, tickerRes] = await Promise.all([
-    fetch(`https://api.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=1m&limit=200`),
-    fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${SYMBOL}`),
+  // Fetch OHLC (200 x 1-minute candles) and ticker from Kraken in parallel
+  const since = Math.floor(Date.now() / 1000) - 200 * 60;
+  const [ohlcRes, tickerRes] = await Promise.all([
+    fetch(`https://api.kraken.com/0/public/OHLC?pair=${SYMBOL}&interval=1&since=${since}`),
+    fetch(`https://api.kraken.com/0/public/Ticker?pair=${SYMBOL}`),
   ]);
 
-  if (!klinesRes.ok || !tickerRes.ok) {
-    throw new Error(`Binance API error: klines=${klinesRes.status}, ticker=${tickerRes.status}`);
+  if (!ohlcRes.ok || !tickerRes.ok) {
+    throw new Error(`Kraken API error: ohlc=${ohlcRes.status}, ticker=${tickerRes.status}`);
   }
 
-  const candles = await klinesRes.json() as (string | number)[][];
-  const ticker24h = await tickerRes.json() as Ticker24h;
+  const ohlcData = await ohlcRes.json() as { error: string[]; result: Record<string, (string | number)[][]> };
+  const tickerData = await tickerRes.json() as { error: string[]; result: Record<string, { c: string[]; v: string[]; o: string }> };
 
+  if (ohlcData.error?.length > 0) {
+    throw new Error(`Kraken OHLC error: ${ohlcData.error.join(', ')}`);
+  }
+  if (tickerData.error?.length > 0) {
+    throw new Error(`Kraken Ticker error: ${tickerData.error.join(', ')}`);
+  }
+
+  // Kraken returns candles keyed by pair name — extract the first result key
+  const ohlcKey = Object.keys(ohlcData.result).find(k => k !== 'last')!;
+  const candles = ohlcData.result[ohlcKey]!;
+
+  // Kraken candle format: [timestamp, open, high, low, close, vwap, volume, count]
+  // Close is at index 4 — same position as Binance, so calculateAllIndicators works unchanged
   const klines: KlineData = { candles };
+
+  // Parse Kraken ticker: c[0] = last price, v[1] = 24h volume, o = today's open
+  const tickerKey = Object.keys(tickerData.result)[0]!;
+  const rawTicker = tickerData.result[tickerKey]!;
+  const lastPrice = parseFloat(rawTicker.c[0]!);
+  const openPrice = parseFloat(rawTicker.o);
+  const priceChangePct = openPrice > 0 ? ((lastPrice - openPrice) / openPrice) * 100 : 0;
+
+  const ticker24h: Ticker24h = {
+    lastPrice: rawTicker.c[0]!,
+    volume: rawTicker.v[1]!,
+    priceChangePercent: String(priceChangePct),
+  };
+
   const indicators = calculateAllIndicators(klines, ticker24h);
 
   // Build SNS message attributes from indicators

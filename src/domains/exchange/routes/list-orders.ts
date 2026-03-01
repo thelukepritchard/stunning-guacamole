@@ -3,7 +3,7 @@ import { jsonResponse, DEMO_EXCHANGE_API_URL } from '../utils';
 import type { OrdersResponse, OrderResponse } from '../../shared/types';
 import { resolveActiveExchange } from '../resolve-exchange';
 import { getAdapter } from '../adapters';
-import { fetchWithTimeout } from '../../shared/fetch-utils';
+import { sigv4Fetch } from '../../shared/sigv4-fetch';
 
 /**
  * Returns the user's orders from their active exchange.
@@ -38,7 +38,7 @@ export async function listOrders(event: APIGatewayProxyEvent): Promise<APIGatewa
 
   let res: Response;
   try {
-    res = await fetchWithTimeout(url);
+    res = await sigv4Fetch(url);
   } catch {
     return jsonResponse(502, { error: 'Failed to reach demo exchange' });
   }

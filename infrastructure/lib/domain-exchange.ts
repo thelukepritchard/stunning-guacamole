@@ -3,6 +3,7 @@ import * as cdk from 'aws-cdk-lib/core';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as kms from 'aws-cdk-lib/aws-kms';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
@@ -108,34 +109,28 @@ export class DomainExchangeStack extends cdk.NestedStack {
     this.demoBalancesTable.grant(demoHandler, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem');
     this.demoOrdersTable.grant(demoHandler, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query');
 
-    // ─── Demo Exchange API Routes ─────────────────────────────────
+    // ─── Demo Exchange API Routes (IAM-authenticated, internal only) ──
 
     const demoIntegration = new apigateway.LambdaIntegration(demoHandler);
 
-    const demoCorsOptions: apigateway.CorsOptions = {
-      allowOrigins: apigateway.Cors.ALL_ORIGINS,
-      allowMethods: apigateway.Cors.ALL_METHODS,
-      allowHeaders: ['Content-Type'],
+    const demoMethodOptions: apigateway.MethodOptions = {
+      authorizationType: apigateway.AuthorizationType.IAM,
     };
 
     const demoRoot = this.demoExchangeApi.root.addResource('demo-exchange');
 
     const demoBalanceResource = demoRoot.addResource('balance');
-    demoBalanceResource.addCorsPreflight(demoCorsOptions);
-    demoBalanceResource.addMethod('GET', demoIntegration);
+    demoBalanceResource.addMethod('GET', demoIntegration, demoMethodOptions);
 
     const demoPairsResource = demoRoot.addResource('pairs');
-    demoPairsResource.addCorsPreflight(demoCorsOptions);
-    demoPairsResource.addMethod('GET', demoIntegration);
+    demoPairsResource.addMethod('GET', demoIntegration, demoMethodOptions);
 
     const demoOrdersResource = demoRoot.addResource('orders');
-    demoOrdersResource.addCorsPreflight(demoCorsOptions);
-    demoOrdersResource.addMethod('GET', demoIntegration);
-    demoOrdersResource.addMethod('POST', demoIntegration);
+    demoOrdersResource.addMethod('GET', demoIntegration, demoMethodOptions);
+    demoOrdersResource.addMethod('POST', demoIntegration, demoMethodOptions);
 
     const demoOrderIdResource = demoOrdersResource.addResource('{orderId}');
-    demoOrderIdResource.addCorsPreflight(demoCorsOptions);
-    demoOrderIdResource.addMethod('DELETE', demoIntegration);
+    demoOrderIdResource.addMethod('DELETE', demoIntegration, demoMethodOptions);
 
     // ══════════════════════════════════════════════════════════════
     // Public Exchange Proxy (authenticated, shared API)
@@ -159,6 +154,12 @@ export class DomainExchangeStack extends cdk.NestedStack {
       'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem', 'dynamodb:Query',
     );
     this.credentialsKey.grant(exchangeHandler, 'kms:Encrypt', 'kms:Decrypt');
+
+    // Grant exchange handler permission to invoke the IAM-authenticated demo exchange API
+    exchangeHandler.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['execute-api:Invoke'],
+      resources: [this.demoExchangeApi.arnForExecuteApi('*', '/demo-exchange/*', '*')],
+    }));
 
     const exchangeIntegration = new apigateway.LambdaIntegration(exchangeHandler);
 

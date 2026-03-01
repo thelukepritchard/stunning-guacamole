@@ -22,7 +22,7 @@ export async function fetchWithTimeout(
   }
 }
 
-/** Cached Binance BTC price entry. */
+/** Cached BTC price entry. */
 interface PriceCache {
   price: number;
   expiresAt: number;
@@ -34,17 +34,17 @@ let btcPriceCache: PriceCache | undefined;
 /** Cache TTL in milliseconds (60 seconds). */
 const PRICE_CACHE_TTL_MS = 60_000;
 
-/** Binance ticker URL (BTCUSDT). */
-const BINANCE_TICKER = 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT';
+/** Kraken ticker URL (BTC/AUD). */
+const KRAKEN_TICKER = 'https://api.kraken.com/0/public/Ticker?pair=XBTAUD';
 
 /**
- * Fetches the current BTC price from Binance with caching and timeout.
+ * Fetches the current BTC price from Kraken with caching and timeout.
  * Returns the cached value if still fresh (60-second TTL). Falls back
- * to the last-known price if Binance is unreachable and the cache has
+ * to the last-known price if Kraken is unreachable and the cache has
  * an expired entry.
  *
- * @returns The BTC price in USD.
- * @throws If Binance is unreachable and no cached price exists.
+ * @returns The BTC price in AUD.
+ * @throws If Kraken is unreachable and no cached price exists.
  */
 export async function fetchBtcPrice(): Promise<number> {
   if (btcPriceCache && btcPriceCache.expiresAt > Date.now()) {
@@ -52,14 +52,18 @@ export async function fetchBtcPrice(): Promise<number> {
   }
 
   try {
-    const res = await fetchWithTimeout(BINANCE_TICKER);
+    const res = await fetchWithTimeout(KRAKEN_TICKER);
     if (!res.ok) {
-      throw new Error(`Binance ticker returned ${res.status}`);
+      throw new Error(`Kraken ticker returned ${res.status}`);
     }
-    const data = (await res.json()) as { price: string };
-    const price = parseFloat(data.price);
+    const data = (await res.json()) as { error: string[]; result: Record<string, { c: string[] }> };
+    if (data.error?.length > 0) {
+      throw new Error(`Kraken ticker error: ${data.error.join(', ')}`);
+    }
+    const tickerKey = Object.keys(data.result)[0]!;
+    const price = parseFloat(data.result[tickerKey]!.c[0]!);
     if (isNaN(price)) {
-      throw new Error('Invalid price returned from Binance');
+      throw new Error('Invalid price returned from Kraken');
     }
 
     btcPriceCache = { price, expiresAt: Date.now() + PRICE_CACHE_TTL_MS };
@@ -67,7 +71,7 @@ export async function fetchBtcPrice(): Promise<number> {
   } catch (err) {
     // Fall back to stale cache if available
     if (btcPriceCache) {
-      console.warn('Binance unreachable, using stale BTC price:', err);
+      console.warn('Kraken unreachable, using stale BTC price:', err);
       return btcPriceCache.price;
     }
     throw err;

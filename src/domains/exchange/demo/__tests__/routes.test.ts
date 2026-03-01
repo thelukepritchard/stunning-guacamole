@@ -54,7 +54,7 @@ describe('demo getBalance', () => {
    * Should return 200 with existing balance when user record exists.
    */
   it('should return 200 with existing balance', async () => {
-    const balance = { sub: 'user-123', usd: 1000, btc: 0 };
+    const balance = { sub: 'user-123', aud: 1000, btc: 0 };
     mockDdbSend.mockResolvedValueOnce({ Item: balance });
     const result = await getBalance(subEvent());
     expect(result.statusCode).toBe(200);
@@ -71,7 +71,7 @@ describe('demo getBalance', () => {
     const result = await getBalance(subEvent());
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
-    expect(body.usd).toBe(1000); // DEFAULT_DEMO_BALANCE
+    expect(body.aud).toBe(1000); // DEFAULT_DEMO_BALANCE
     expect(body.btc).toBe(0);
   });
 });
@@ -102,7 +102,7 @@ describe('demo placeOrder', () => {
     jest.clearAllMocks();
     mockFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ symbol: 'BTCUSDT', price: '50000' }),
+      json: async () => ({ error: [], result: { XBTAUD: { c: ['50000'] } } }),
     });
   });
 
@@ -150,10 +150,10 @@ describe('demo placeOrder', () => {
   });
 
   /**
-   * Should return 502 when Binance price fetch fails.
+   * Should return 502 when Kraken price fetch fails.
    */
-  it('should return 502 when Binance price fetch fails', async () => {
-    mockDdbSend.mockResolvedValueOnce({ Item: { sub: 'user-123', usd: 1000, btc: 0 } });
+  it('should return 502 when Kraken price fetch fails', async () => {
+    mockDdbSend.mockResolvedValueOnce({ Item: { sub: 'user-123', aud: 1000, btc: 0 } });
     mockFetch.mockRejectedValueOnce(new Error('Network error'));
     const result = await placeOrder(buildEvent({ body: JSON.stringify(validBody) }));
     expect(result.statusCode).toBe(502);
@@ -164,7 +164,7 @@ describe('demo placeOrder', () => {
    */
   it('should return 201 with filled order on success', async () => {
     mockDdbSend
-      .mockResolvedValueOnce({ Item: { sub: 'user-123', usd: 1000, btc: 0 } }) // ensureBalance Get
+      .mockResolvedValueOnce({ Item: { sub: 'user-123', aud: 1000, btc: 0 } }) // ensureBalance Get
       .mockResolvedValue({}); // TransactWrite
     const result = await placeOrder(buildEvent({ body: JSON.stringify(validBody) }));
     expect(result.statusCode).toBe(201);
@@ -179,7 +179,7 @@ describe('demo placeOrder', () => {
    */
   it('should return 200 with failed order on insufficient balance', async () => {
     mockDdbSend
-      .mockResolvedValueOnce({ Item: { sub: 'user-123', usd: 1, btc: 0 } }) // ensureBalance Get
+      .mockResolvedValueOnce({ Item: { sub: 'user-123', aud: 1, btc: 0 } }) // ensureBalance Get
       .mockRejectedValueOnce(Object.assign(new Error('Transaction cancelled'), { name: 'TransactionCanceledException' })) // TransactWrite
       .mockResolvedValueOnce({}); // PutCommand for failed order
     const result = await placeOrder(buildEvent({ body: JSON.stringify(validBody) }));

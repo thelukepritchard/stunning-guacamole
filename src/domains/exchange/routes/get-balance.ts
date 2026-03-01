@@ -4,7 +4,8 @@ import { COIN_NAMES, CURRENCY_NAMES } from '../../shared/types';
 import type { BalanceResponse, HoldingEntry } from '../../shared/types';
 import { resolveActiveExchange } from '../resolve-exchange';
 import { getAdapter } from '../adapters';
-import { fetchWithTimeout, fetchBtcPrice } from '../../shared/fetch-utils';
+import { fetchBtcPrice } from '../../shared/fetch-utils';
+import { sigv4Fetch } from '../../shared/sigv4-fetch';
 
 /**
  * Returns the user's balance with a full holdings breakdown.
@@ -46,7 +47,7 @@ export async function getBalance(event: APIGatewayProxyEvent): Promise<APIGatewa
   let balanceRes: Response;
   let btcPrice: number;
   try {
-    [balanceRes, btcPrice] = await Promise.all([fetchWithTimeout(balanceUrl), fetchBtcPrice()]);
+    [balanceRes, btcPrice] = await Promise.all([sigv4Fetch(balanceUrl), fetchBtcPrice()]);
   } catch {
     return jsonResponse(502, { error: 'Failed to reach demo exchange' });
   }
@@ -56,14 +57,14 @@ export async function getBalance(event: APIGatewayProxyEvent): Promise<APIGatewa
     return jsonResponse(502, { error: 'Failed to fetch balance from demo exchange' });
   }
 
-  const data = (await balanceRes.json()) as { usd: number; btc: number };
+  const data = (await balanceRes.json()) as { aud: number; btc: number };
 
   const holdings: HoldingEntry[] = [];
   const currency = 'AUD';
 
   // Only include base currency if worth at least 1 cent
-  if (data.usd >= 0.01) {
-    holdings.push({ asset: currency, name: CURRENCY_NAMES[currency] ?? currency, amount: data.usd, price: 1, value: data.usd });
+  if (data.aud >= 0.01) {
+    holdings.push({ asset: currency, name: CURRENCY_NAMES[currency] ?? currency, amount: data.aud, price: 1, value: data.aud });
   }
 
   if (data.btc > 0) {

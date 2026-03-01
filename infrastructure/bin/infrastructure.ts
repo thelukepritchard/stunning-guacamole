@@ -116,6 +116,7 @@ class InfrastructureStack extends cdk.Stack {
       botsTable: bots.botsTable,
       indicatorsTopic: market.indicatorsTopic,
       demoExchangeApiUrl: exchange.demoExchangeApi.url,
+      demoExchangeApi: exchange.demoExchangeApi,
       connectionsTable: exchange.connectionsTable,
       credentialsKey: exchange.credentialsKey,
     });

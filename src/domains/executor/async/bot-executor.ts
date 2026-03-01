@@ -6,6 +6,7 @@ import type { BotAction, BotRecord, IndicatorSnapshot, SizingConfig, TradeTrigge
 import { resolveBotExchange } from '../../exchange/resolve-bot-exchange';
 import type { ResolvedExchange } from '../../exchange/resolve-exchange';
 import { getAdapter } from '../../exchange/adapters';
+import { sigv4Fetch } from '../../shared/sigv4-fetch';
 
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const DEMO_EXCHANGE_API_URL = process.env.DEMO_EXCHANGE_API_URL!;
@@ -67,10 +68,10 @@ async function queryActiveBotsByPair(pair: string): Promise<BotRecord[]> {
 async function fetchBalance(sub: string, resolved: ResolvedExchange, pair: string): Promise<{ base: number; quote: number }> {
   if (resolved.exchangeId === 'demo') {
     const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/balance?sub=${encodeURIComponent(sub)}`;
-    const res = await fetch(url);
+    const res = await sigv4Fetch(url);
     if (!res.ok) throw new Error(`Failed to fetch demo balance: ${res.status}`);
-    const data = (await res.json()) as { usd: number; btc: number };
-    return { base: data.usd, quote: data.btc };
+    const data = (await res.json()) as { aud: number; btc: number };
+    return { base: data.aud, quote: data.btc };
   }
 
   // Real exchange — use adapter
@@ -160,7 +161,7 @@ async function placeExchangeOrder(
 ): Promise<OrderResult> {
   if (resolved.exchangeId === 'demo') {
     const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/orders`;
-    const res = await fetch(url, {
+    const res = await sigv4Fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sub, pair, side, size }),

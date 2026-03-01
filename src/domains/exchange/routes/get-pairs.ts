@@ -4,7 +4,7 @@ import { COIN_NAMES } from '../../shared/types';
 import type { PairsResponse } from '../../shared/types';
 import { resolveActiveExchange } from '../resolve-exchange';
 import { getAdapter } from '../adapters';
-import { fetchWithTimeout } from '../../shared/fetch-utils';
+import { sigv4Fetch } from '../../shared/sigv4-fetch';
 
 /**
  * Returns available trading pairs filtered to the user's base currency
@@ -40,7 +40,7 @@ export async function getPairs(event: APIGatewayProxyEvent): Promise<APIGatewayP
 
   let res: Response;
   try {
-    res = await fetchWithTimeout(url);
+    res = await sigv4Fetch(url);
   } catch {
     return jsonResponse(502, { error: 'Failed to reach demo exchange' });
   }

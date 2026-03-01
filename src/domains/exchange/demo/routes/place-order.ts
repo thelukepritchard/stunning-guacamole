@@ -14,7 +14,7 @@ const ORDERS_TABLE = process.env.ORDERS_TABLE_NAME!;
 
 /**
  * Places a market order on the demo exchange. The order is always filled
- * immediately at the current Binance BTC price. The balance update and
+ * immediately at the current Kraken BTC/AUD price. The balance update and
  * order record are written in a single DynamoDB transaction to ensure
  * atomicity.
  *
@@ -51,12 +51,12 @@ export async function placeOrder(event: APIGatewayProxyEvent): Promise<APIGatewa
   // Ensure user has a balance record (seeds default if new)
   await ensureBalance(sub as string);
 
-  // Fetch live BTC price from Binance
+  // Fetch live BTC price from Kraken (AUD)
   let price: number;
   try {
     price = await fetchBtcPrice();
   } catch {
-    return jsonResponse(502, { error: 'Failed to fetch current price from Binance' });
+    return jsonResponse(502, { error: 'Failed to fetch current price from Kraken' });
   }
 
   const now = new Date().toISOString();
@@ -80,12 +80,12 @@ export async function placeOrder(event: APIGatewayProxyEvent): Promise<APIGatewa
   try {
     const balanceUpdate = side === 'buy'
       ? {
-          UpdateExpression: 'SET usd = usd - :cost, btc = btc + :size, updatedAt = :now',
-          ConditionExpression: 'usd >= :cost',
+          UpdateExpression: 'SET aud = aud - :cost, btc = btc + :size, updatedAt = :now',
+          ConditionExpression: 'aud >= :cost',
           ExpressionAttributeValues: { ':cost': total, ':size': size, ':now': now },
         }
       : {
-          UpdateExpression: 'SET btc = btc - :size, usd = usd + :proceeds, updatedAt = :now',
+          UpdateExpression: 'SET btc = btc - :size, aud = aud + :proceeds, updatedAt = :now',
           ConditionExpression: 'btc >= :size',
           ExpressionAttributeValues: { ':size': size, ':proceeds': total, ':now': now },
         };
@@ -109,7 +109,7 @@ export async function placeOrder(event: APIGatewayProxyEvent): Promise<APIGatewa
     }));
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'TransactionCanceledException') {
-      const currency = side === 'buy' ? 'USD' : 'BTC';
+      const currency = side === 'buy' ? 'AUD' : 'BTC';
       const failReason = `Insufficient ${currency} balance`;
 
       // Write a failed order record so the user can see why the order was rejected

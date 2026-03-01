@@ -1,14 +1,19 @@
 import { buildEvent } from '../../test-utils';
 
-// ─── Mock fetch-utils (fetchWithTimeout + fetchBtcPrice) ─────────────────────
-// This decouples the route tests from the Binance price cache implementation
-// and prevents btcPriceCache leakage across tests.
+// ─── Mock sigv4-fetch (used by demo exchange calls) ──────────────────────────
 
-const mockFetchWithTimeout = jest.fn();
+const mockSigv4Fetch = jest.fn();
+
+jest.mock('../../shared/sigv4-fetch', () => ({
+  sigv4Fetch: (...args: unknown[]) => mockSigv4Fetch(...args),
+}));
+
+// ─── Mock fetch-utils (fetchBtcPrice) ────────────────────────────────────────
+// This decouples the route tests from the Kraken price cache implementation.
+
 const mockFetchBtcPrice = jest.fn();
 
 jest.mock('../../shared/fetch-utils', () => ({
-  fetchWithTimeout: (...args: unknown[]) => mockFetchWithTimeout(...args),
   fetchBtcPrice: () => mockFetchBtcPrice(),
 }));
 
@@ -86,7 +91,7 @@ describe('exchange getBalance', () => {
    * Should return 502 when the demo exchange balance fetch throws a network error.
    */
   it('should return 502 when fetch throws', async () => {
-    mockFetchWithTimeout.mockRejectedValueOnce(new Error('Network error'));
+    mockSigv4Fetch.mockRejectedValueOnce(new Error('Network error'));
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(502);
     expect(JSON.parse(result.body).error).toBe('Failed to reach demo exchange');
@@ -98,7 +103,7 @@ describe('exchange getBalance', () => {
    * service details to the client.
    */
   it('should return 502 (sanitized) when demo exchange returns a non-ok status', async () => {
-    mockFetchWithTimeout.mockResolvedValueOnce(mockFailResponse(503, { error: 'Service unavailable' }));
+    mockSigv4Fetch.mockResolvedValueOnce(mockFailResponse(503, { error: 'Service unavailable' }));
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(502);
     expect(JSON.parse(result.body).error).toBe('Failed to fetch balance from demo exchange');
@@ -108,7 +113,7 @@ describe('exchange getBalance', () => {
    * Should return holdings with only AUD for a new user with 0 BTC.
    */
   it('should return 1 holding for new user with 0 BTC', async () => {
-    mockFetchWithTimeout.mockResolvedValueOnce(mockOkResponse({ usd: 1000, btc: 0 }));
+    mockSigv4Fetch.mockResolvedValueOnce(mockOkResponse({ aud: 1000, btc: 0 }));
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
@@ -125,7 +130,7 @@ describe('exchange getBalance', () => {
    * BTC value = amount * price = 0.01 * 50,000 = 500.
    */
   it('should return 2 holdings when user has BTC', async () => {
-    mockFetchWithTimeout.mockResolvedValueOnce(mockOkResponse({ usd: 500, btc: 0.01 }));
+    mockSigv4Fetch.mockResolvedValueOnce(mockOkResponse({ aud: 500, btc: 0.01 }));
     mockFetchBtcPrice.mockResolvedValue(50_000);
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(200);
@@ -161,7 +166,7 @@ describe('exchange getPairs', () => {
    * Should return 502 when the demo exchange is unreachable.
    */
   it('should return 502 when fetch throws', async () => {
-    mockFetchWithTimeout.mockRejectedValueOnce(new Error('Network error'));
+    mockSigv4Fetch.mockRejectedValueOnce(new Error('Network error'));
     const result = await getPairs(authedEvent());
     expect(result.statusCode).toBe(502);
     expect(JSON.parse(result.body).error).toBe('Failed to reach demo exchange');
@@ -171,7 +176,7 @@ describe('exchange getPairs', () => {
    * Should return 200 with normalised pairs response on success.
    */
   it('should return 200 with normalised pairs on success', async () => {
-    mockFetchWithTimeout.mockResolvedValueOnce(mockOkResponse({
+    mockSigv4Fetch.mockResolvedValueOnce(mockOkResponse({
       coins: [{ ticker: 'BTC', name: 'Bitcoin' }],
     }));
     const result = await getPairs(authedEvent());
@@ -205,7 +210,7 @@ describe('exchange listOrders', () => {
    * Should return 502 when the demo exchange is unreachable.
    */
   it('should return 502 when fetch throws', async () => {
-    mockFetchWithTimeout.mockRejectedValueOnce(new Error('Network error'));
+    mockSigv4Fetch.mockRejectedValueOnce(new Error('Network error'));
     const result = await listOrders(authedEvent());
     expect(result.statusCode).toBe(502);
     expect(JSON.parse(result.body).error).toBe('Failed to reach demo exchange');
@@ -215,7 +220,7 @@ describe('exchange listOrders', () => {
    * Should return 200 with normalised orders on success.
    */
   it('should return 200 with normalised orders on success', async () => {
-    mockFetchWithTimeout.mockResolvedValueOnce(mockOkResponse({
+    mockSigv4Fetch.mockResolvedValueOnce(mockOkResponse({
       orders: [{
         orderId: 'o1',
         pair: 'BTC',
@@ -266,7 +271,7 @@ describe('exchange cancelOrder', () => {
    * Should return 502 when the demo exchange is unreachable.
    */
   it('should return 502 when fetch throws', async () => {
-    mockFetchWithTimeout.mockRejectedValueOnce(new Error('Network error'));
+    mockSigv4Fetch.mockRejectedValueOnce(new Error('Network error'));
     const result = await cancelOrder(authedEvent({ pathParameters: { orderId: 'o1' } }));
     expect(result.statusCode).toBe(502);
     expect(JSON.parse(result.body).error).toBe('Failed to reach demo exchange');
@@ -277,7 +282,7 @@ describe('exchange cancelOrder', () => {
    * rather than forwarding the upstream status code to the client.
    */
   it('should return 502 (sanitized) when demo exchange returns non-ok', async () => {
-    mockFetchWithTimeout.mockResolvedValueOnce(mockFailResponse(501, { error: 'Not supported' }));
+    mockSigv4Fetch.mockResolvedValueOnce(mockFailResponse(501, { error: 'Not supported' }));
     const result = await cancelOrder(authedEvent({ pathParameters: { orderId: 'o1' } }));
     expect(result.statusCode).toBe(502);
     expect(JSON.parse(result.body).error).toBe('Failed to cancel order on demo exchange');

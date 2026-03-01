@@ -14,6 +14,14 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
   UpdateCommand: jest.fn().mockImplementation((params: object) => ({ ...params, _type: 'Update' })),
 }));
 
+// ─── Mock sigv4-fetch (used by demo exchange calls) ──────────────────────────
+
+const mockSigv4Fetch = jest.fn();
+
+jest.mock('../../shared/sigv4-fetch', () => ({
+  sigv4Fetch: (...args: unknown[]) => mockSigv4Fetch(...args),
+}));
+
 import type { SNSEvent, SNSEventRecord } from 'aws-lambda';
 import type { BotRecord, IndicatorSnapshot, RuleGroup } from '../../shared/types';
 import { handler } from '../async/bot-executor';
@@ -370,7 +378,7 @@ describe('bot-executor — isAllowedOnceAndWait', () => {
 // ─── executeOnExchange / sizing / fetch paths ─────────────────────────────────
 
 describe('bot-executor — executeOnExchange and sizing', () => {
-  let mockFetch: jest.SpyInstance;
+  // mockSigv4Fetch is declared at module level
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -392,12 +400,11 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     process.env.TRADES_TABLE_NAME = 'trades-table';
     process.env.DEMO_EXCHANGE_API_URL = 'https://demo.example.com/';
 
-    // Spy on global fetch — real network must never be called in tests
-    mockFetch = jest.spyOn(global, 'fetch');
+    mockSigv4Fetch.mockReset();
   });
 
   afterEach(() => {
-    mockFetch.mockRestore();
+    mockSigv4Fetch.mockReset();
   });
 
   /**
@@ -412,7 +419,7 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     mockOneBotFlow(bot, true);
 
     // fetch is called once — the POST to place-order returns a filled order
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ orderId: 'order-1', status: 'filled' }),
     } as Response);
@@ -420,9 +427,9 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     const indicators = buildIndicators(50_000);
     await handler(buildSnsEvent(indicators));
 
-    // fetch should be called exactly once: POST place-order (no balance fetch for fixed sizing)
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    // sigv4Fetch should be called exactly once: POST place-order (no balance fetch for fixed sizing)
+    expect(mockSigv4Fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockSigv4Fetch.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('demo-exchange/orders');
     expect(init.method).toBe('POST');
     const body = JSON.parse(init.body as string) as { sub: string; pair: string; side: string; size: number };
@@ -442,7 +449,7 @@ describe('bot-executor — executeOnExchange and sizing', () => {
 
   /**
    * When buySizing is percentage, calculateOrderSize fetches the current balance
-   * first, then computes size = (usd * pct/100) / price.
+   * first, then computes size = (aud * pct/100) / price.
    */
   it('should fetch balance and place a percentage-sized buy order', async () => {
     const bot = buildBot({
@@ -452,13 +459,13 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     mockOneBotFlow(bot, true);
 
     // First fetch: GET balance
-    mockFetch.mockResolvedValueOnce({
+    mockSigv4Fetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ usd: 2000, btc: 0.1 }),
+      json: async () => ({ aud: 2000, btc: 0.1 }),
     } as Response);
 
     // Second fetch: POST place-order returns filled order
-    mockFetch.mockResolvedValueOnce({
+    mockSigv4Fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ orderId: 'order-2', status: 'filled' }),
     } as Response);
@@ -466,15 +473,15 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     const indicators = buildIndicators(50_000);
     await handler(buildSnsEvent(indicators));
 
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockSigv4Fetch).toHaveBeenCalledTimes(2);
 
     // First call should be a GET to the balance endpoint
-    const [balanceUrl] = mockFetch.mock.calls[0] as [string, RequestInit | undefined];
+    const [balanceUrl] = mockSigv4Fetch.mock.calls[0] as [string, RequestInit | undefined];
     expect(balanceUrl).toContain('demo-exchange/balance');
     expect(balanceUrl).toContain('sub=user-1');
 
     // Second call should be a POST to place the order
-    const [orderUrl, orderInit] = mockFetch.mock.calls[1] as [string, RequestInit];
+    const [orderUrl, orderInit] = mockSigv4Fetch.mock.calls[1] as [string, RequestInit];
     expect(orderUrl).toContain('demo-exchange/orders');
     expect(orderInit.method).toBe('POST');
     const body = JSON.parse(orderInit.body as string) as { size: number };
@@ -495,13 +502,13 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     mockOneBotFlow(bot, true);
 
     // Balance fetch
-    mockFetch.mockResolvedValueOnce({
+    mockSigv4Fetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ usd: 0, btc: 0.5 }),
+      json: async () => ({ aud: 0, btc: 0.5 }),
     } as Response);
 
     // Place order returns filled
-    mockFetch.mockResolvedValueOnce({
+    mockSigv4Fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ orderId: 'order-3', status: 'filled' }),
     } as Response);
@@ -509,7 +516,7 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     const indicators = buildIndicators(50_000);
     await handler(buildSnsEvent(indicators));
 
-    const [, orderInit] = mockFetch.mock.calls[1] as [string, RequestInit];
+    const [, orderInit] = mockSigv4Fetch.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(orderInit.body as string) as { side: string; size: number };
     expect(body.side).toBe('sell');
     // 0.5 BTC * 100% = 0.5 BTC
@@ -528,16 +535,16 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     mockOneBotFlow(bot, true);
 
     // Balance fetch returns $0 USD
-    mockFetch.mockResolvedValueOnce({
+    mockSigv4Fetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ usd: 0, btc: 0 }),
+      json: async () => ({ aud: 0, btc: 0 }),
     } as Response);
 
     const indicators = buildIndicators(50_000);
     await handler(buildSnsEvent(indicators));
 
     // Only the balance GET should have been called — no POST for the order
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockSigv4Fetch).toHaveBeenCalledTimes(1);
     const { PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { PutCommand: jest.Mock };
     // Trade is still recorded even when order is skipped, with orderStatus = 'skipped'
     expect(PutCommand).toHaveBeenCalledTimes(1);
@@ -558,9 +565,9 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     mockOneBotFlow(bot, true);
 
     // POST to place-order returns a failed order
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ orderId: 'order-fail-1', status: 'failed', failReason: 'Insufficient USD balance' }),
+      json: async () => ({ orderId: 'order-fail-1', status: 'failed', failReason: 'Insufficient AUD balance' }),
     } as Response);
 
     const indicators = buildIndicators(50_000);
@@ -596,7 +603,7 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     mockSend.mockResolvedValueOnce({});
 
     // Balance fetch fails
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: false,
       status: 502,
       text: async () => 'Bad Gateway',
@@ -630,7 +637,7 @@ describe('bot-executor — executeOnExchange and sizing', () => {
 //   5. UpdateCommand — SET lastAction = :prev  (restore old value)
 
 describe('bot-executor — executeOnceAndWait order-not-filled revert', () => {
-  let mockFetch: jest.SpyInstance;
+  // mockSigv4Fetch is declared at module level
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -652,11 +659,11 @@ describe('bot-executor — executeOnceAndWait order-not-filled revert', () => {
     process.env.TRADES_TABLE_NAME = 'trades-table';
     process.env.DEMO_EXCHANGE_API_URL = 'https://demo.example.com/';
 
-    mockFetch = jest.spyOn(global, 'fetch');
+    mockSigv4Fetch.mockReset();
   });
 
   afterEach(() => {
-    mockFetch.mockRestore();
+    mockSigv4Fetch.mockReset();
   });
 
   /**
@@ -684,7 +691,7 @@ describe('bot-executor — executeOnceAndWait order-not-filled revert', () => {
     mockSend.mockResolvedValueOnce({});
 
     // Exchange order returns failed
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ orderId: 'o-fail', status: 'failed', failReason: 'Insufficient balance' }),
     } as Response);
@@ -739,7 +746,7 @@ describe('bot-executor — executeOnceAndWait order-not-filled revert', () => {
     mockSend.mockResolvedValueOnce({});
 
     // Exchange order returns failed
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ orderId: 'o-fail-2', status: 'failed', failReason: 'Insufficient BTC' }),
     } as Response);
@@ -812,7 +819,7 @@ describe('bot-executor — executeOnceAndWait order-not-filled revert', () => {
     // 5 mocks: GSI, Get, conditional-update, PutCommand, entryPrice-update
     mockOneBotFlow(bot, true);
 
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ orderId: 'o-ok', status: 'filled' }),
     } as Response);
@@ -842,7 +849,7 @@ describe('bot-executor — executeOnceAndWait order-not-filled revert', () => {
 //   - Without cooldown: simply not call updateEntryPrice
 
 describe('bot-executor — tryConditionCooldownAction order-not-filled revert', () => {
-  let mockFetch: jest.SpyInstance;
+  // mockSigv4Fetch is declared at module level
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -864,11 +871,11 @@ describe('bot-executor — tryConditionCooldownAction order-not-filled revert', 
     process.env.TRADES_TABLE_NAME = 'trades-table';
     process.env.DEMO_EXCHANGE_API_URL = 'https://demo.example.com/';
 
-    mockFetch = jest.spyOn(global, 'fetch');
+    mockSigv4Fetch.mockReset();
   });
 
   afterEach(() => {
-    mockFetch.mockRestore();
+    mockSigv4Fetch.mockReset();
   });
 
   /**
@@ -906,7 +913,7 @@ describe('bot-executor — tryConditionCooldownAction order-not-filled revert', 
     mockSend.mockResolvedValueOnce({});
 
     // Exchange order returns failed
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ orderId: 'o-cd-fail', status: 'failed', failReason: 'Insufficient balance' }),
     } as Response);
@@ -969,7 +976,7 @@ describe('bot-executor — tryConditionCooldownAction order-not-filled revert', 
     mockSend.mockResolvedValueOnce({});
 
     // Exchange order returns filled
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ orderId: 'o-cd-ok', status: 'filled' }),
     } as Response);
@@ -1018,7 +1025,7 @@ describe('bot-executor — tryConditionCooldownAction order-not-filled revert', 
     mockSend.mockResolvedValueOnce({});
 
     // Exchange order returns failed
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ orderId: 'o-nocd-fail', status: 'failed', failReason: 'Insufficient balance' }),
     } as Response);
@@ -1067,7 +1074,7 @@ describe('bot-executor — tryConditionCooldownAction order-not-filled revert', 
     mockSend.mockResolvedValueOnce({});
 
     // Exchange order returns filled
-    mockFetch.mockResolvedValue({
+    mockSigv4Fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ orderId: 'o-nocd-ok', status: 'filled' }),
     } as Response);

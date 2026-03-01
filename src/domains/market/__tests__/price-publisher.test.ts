@@ -21,24 +21,35 @@ import { handler } from '../async/price-publisher';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Builds a mock klines response with 200 candles. */
-function buildKlinesResponse() {
-  return Array.from({ length: 200 }, (_, i) => [
-    Date.now() + i * 60_000,
+/** Builds a mock Kraken OHLC response with 200 candles. */
+function buildOhlcResponse() {
+  const candles = Array.from({ length: 200 }, (_, i) => [
+    Math.floor(Date.now() / 1000) + i * 60, // timestamp
     '50000',        // open
     '50500',        // high
     '49500',        // low
     String(50_000 + (i % 10) * 100), // close
+    '50250',        // vwap
     '100',          // volume
+    10,             // count
   ]);
+  return {
+    error: [],
+    result: { XXBTAUD: candles, last: 12345 },
+  };
 }
 
-/** Builds a mock ticker response. */
+/** Builds a mock Kraken ticker response. */
 function buildTickerResponse() {
   return {
-    volume: '25000.5',
-    priceChangePercent: '2.35',
-    lastPrice: '50900',
+    error: [],
+    result: {
+      XXBTAUD: {
+        c: ['50900', '0.1'],      // last trade [price, volume]
+        v: ['1000', '25000.5'],   // volume [today, 24h]
+        o: '49732',               // today's open
+      },
+    },
   };
 }
 
@@ -67,14 +78,14 @@ describe('price-publisher handler', () => {
   // ── successful flow ──────────────────────────────────────────────────────────
 
   /**
-   * Should fetch klines and ticker from Binance, calculate indicators,
+   * Should fetch OHLC and ticker from Kraken, calculate indicators,
    * store a price history record, and publish to SNS.
    */
   it('should fetch data, store price history, and publish to SNS', async () => {
     mockFetch
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => buildKlinesResponse(),
+        json: async () => buildOhlcResponse(),
       } as Response)
       .mockResolvedValueOnce({
         ok: true,
@@ -86,13 +97,14 @@ describe('price-publisher handler', () => {
 
     await handler();
 
-    // Verify Binance API calls
+    // Verify Kraken API calls
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    const [klinesUrl] = mockFetch.mock.calls[0] as [string];
+    const [ohlcUrl] = mockFetch.mock.calls[0] as [string];
     const [tickerUrl] = mockFetch.mock.calls[1] as [string];
-    expect(klinesUrl).toContain('klines');
-    expect(klinesUrl).toContain('BTCUSDT');
-    expect(tickerUrl).toContain('ticker/24hr');
+    expect(ohlcUrl).toContain('OHLC');
+    expect(ohlcUrl).toContain('XBTAUD');
+    expect(tickerUrl).toContain('Ticker');
+    expect(tickerUrl).toContain('XBTAUD');
 
     // Verify DynamoDB put
     const { PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { PutCommand: jest.Mock };
@@ -121,7 +133,7 @@ describe('price-publisher handler', () => {
    */
   it('should include all indicator fields in SNS message attributes', async () => {
     mockFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => buildKlinesResponse() } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => buildOhlcResponse() } as Response)
       .mockResolvedValueOnce({ ok: true, json: async () => buildTickerResponse() } as Response);
 
     mockDdbSend.mockResolvedValueOnce({});
@@ -156,28 +168,42 @@ describe('price-publisher handler', () => {
     expect(attrs.macd_signal.DataType).toBe('String');
   });
 
-  // ── Binance API error ────────────────────────────────────────────────────────
+  // ── Kraken API error ────────────────────────────────────────────────────────
 
   /**
-   * Should throw when Binance klines API returns non-OK status.
+   * Should throw when Kraken OHLC API returns non-OK status.
    */
-  it('should throw when Binance klines API fails', async () => {
+  it('should throw when Kraken OHLC API fails', async () => {
     mockFetch
       .mockResolvedValueOnce({ ok: false, status: 502 } as Response)
       .mockResolvedValueOnce({ ok: true, json: async () => buildTickerResponse() } as Response);
 
-    await expect(handler()).rejects.toThrow('Binance API error');
+    await expect(handler()).rejects.toThrow('Kraken API error');
   });
 
   /**
-   * Should throw when Binance ticker API returns non-OK status.
+   * Should throw when Kraken ticker API returns non-OK status.
    */
-  it('should throw when Binance ticker API fails', async () => {
+  it('should throw when Kraken ticker API fails', async () => {
     mockFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => buildKlinesResponse() } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => buildOhlcResponse() } as Response)
       .mockResolvedValueOnce({ ok: false, status: 503 } as Response);
 
-    await expect(handler()).rejects.toThrow('Binance API error');
+    await expect(handler()).rejects.toThrow('Kraken API error');
+  });
+
+  /**
+   * Should throw when Kraken returns an error array.
+   */
+  it('should throw when Kraken returns error in response body', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ error: ['EGeneral:Internal error'], result: {} }),
+      } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => buildTickerResponse() } as Response);
+
+    await expect(handler()).rejects.toThrow('Kraken OHLC error');
   });
 
   // ── price history TTL ────────────────────────────────────────────────────────
@@ -187,7 +213,7 @@ describe('price-publisher handler', () => {
    */
   it('should set TTL to approximately 30 days from now', async () => {
     mockFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => buildKlinesResponse() } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => buildOhlcResponse() } as Response)
       .mockResolvedValueOnce({ ok: true, json: async () => buildTickerResponse() } as Response);
 
     mockDdbSend.mockResolvedValueOnce({});

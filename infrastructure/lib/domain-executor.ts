@@ -26,6 +26,8 @@ export interface DomainExecutorStackProps extends cdk.NestedStackProps {
   indicatorsTopic: sns.Topic;
   /** The base URL of the demo exchange internal API. */
   demoExchangeApiUrl: string;
+  /** The demo exchange REST API (for granting IAM invoke permissions). */
+  demoExchangeApi: apigateway.RestApi;
   /** The exchange connections table (for resolving real exchange credentials). */
   connectionsTable: dynamodb.Table;
   /** The KMS key for decrypting exchange API credentials. */
@@ -110,6 +112,12 @@ export class DomainExecutorStack extends cdk.NestedStack {
 
     props.connectionsTable.grantReadData(botExecutorHandler);
     props.credentialsKey.grantDecrypt(botExecutorHandler);
+
+    // Grant bot executor permission to invoke the IAM-authenticated demo exchange API
+    botExecutorHandler.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['execute-api:Invoke'],
+      resources: [props.demoExchangeApi.arnForExecuteApi('*', '/demo-exchange/*', '*')],
+    }));
 
     // SNS subscription — bot executor receives indicator ticks
     props.indicatorsTopic.addSubscription(

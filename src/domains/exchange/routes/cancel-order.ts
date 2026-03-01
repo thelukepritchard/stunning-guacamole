@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { jsonResponse, DEMO_EXCHANGE_API_URL } from '../utils';
 import { resolveActiveExchange } from '../resolve-exchange';
-import { fetchWithTimeout } from '../../shared/fetch-utils';
+import { sigv4Fetch } from '../../shared/sigv4-fetch';
 
 /**
  * Cancels a pending order on the user's active exchange.
@@ -36,7 +36,7 @@ export async function cancelOrder(event: APIGatewayProxyEvent): Promise<APIGatew
 
   let res: Response;
   try {
-    res = await fetchWithTimeout(url, { method: 'DELETE' });
+    res = await sigv4Fetch(url, { method: 'DELETE' });
   } catch {
     return jsonResponse(502, { error: 'Failed to reach demo exchange' });
   }

@@ -95,7 +95,7 @@ export interface TradeRecord {
   orderStatus?: 'filled' | 'failed' | 'skipped';
   /** Demo exchange order ID — links the trade to the exchange order record. */
   orderId?: string;
-  /** Human-readable reason when orderStatus is 'failed' (e.g. "Insufficient USD balance"). */
+  /** Human-readable reason when orderStatus is 'failed' (e.g. "Insufficient AUD balance"). */
   failReason?: string;
   /** The exchange this trade was placed on. */
   exchangeId: ExchangeId;
@@ -548,8 +548,8 @@ export const COIN_NAMES: Record<string, string> = {
 export interface DemoBalanceRecord {
   /** User ID (partition key). */
   sub: string;
-  /** Available USD balance. */
-  usd: number;
+  /** Available AUD balance. */
+  aud: number;
   /** Available BTC balance. */
   btc: number;
   /** ISO timestamp of creation. */
@@ -572,13 +572,13 @@ export interface DemoOrderRecord {
   type: 'market';
   /** Quantity of base asset (BTC). */
   size: number;
-  /** Execution price in quote currency (USD). */
+  /** Execution price in quote currency (AUD). */
   executedPrice: number;
-  /** Total cost (buy) or proceeds (sell) in quote currency (USD). */
+  /** Total cost (buy) or proceeds (sell) in quote currency (AUD). */
   total: number;
   /** Order status. */
   status: 'filled' | 'cancelled' | 'failed';
-  /** Rejection reason — populated when status is 'failed' (e.g. "Insufficient USD balance"). */
+  /** Rejection reason — populated when status is 'failed' (e.g. "Insufficient AUD balance"). */
   failReason?: string;
   /** ISO timestamp of creation. */
   createdAt: string;
@@ -592,7 +592,7 @@ export interface DemoCoin {
   name: string;
 }
 
-/** Default starting USD balance for new demo users. */
+/** Default starting AUD balance for new demo users. */
 export const DEFAULT_DEMO_BALANCE = 1000;
 
 /** Available coins in demo mode. */
@@ -600,5 +600,5 @@ export const DEMO_COINS: DemoCoin[] = [
   { ticker: 'BTC', name: 'Bitcoin' },
 ];
 
-/** Binance ticker API endpoint for BTC price (USDT ≈ USD for demo). */
-export const BINANCE_TICKER_URL = 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT';
+/** Kraken ticker API endpoint for BTC/AUD price. */
+export const KRAKEN_TICKER_URL = 'https://api.kraken.com/0/public/Ticker?pair=XBTAUD';
