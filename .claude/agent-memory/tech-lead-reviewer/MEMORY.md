@@ -102,3 +102,20 @@
 - `list-orders.ts` casts `Record<string, unknown>` fields with `as string`/`as number` — safe but brittle; prefer using `DemoOrderRecord` type imported from demo-exchange or a local mapped type.
 - `get-balance.ts` checks `res.ok` AFTER calling `res.json()` — this risks a double-read on the response body stream. Read json first and check ok after is the correct order; but if the upstream returns a non-JSON error body, `.json()` may throw. Should guard with try/catch or check ok before parsing.
 - `DEMO_EXCHANGE_API_URL` declared as module-level constant in every route file independently — shared env var reading is fine but the trailing slash in the URL string concatenation (`url` ends with trailing slash in env, then routes append path starting without slash) must be consistent. Tests confirm the URL is set to 'https://demo-api.example.com/' with trailing slash.
+
+### Multi-Exchange Connection Infrastructure (Phase 1)
+- `ExchangeConnectionRecord` PK=`sub`, SK=`connectionId` (exchangeId or 'ACTIVE'). The ACTIVE sentinel record stores the active exchange preference.
+- `resolveActiveExchange` in `resolve-exchange.ts`: reads ACTIVE record, falls back to demo if absent. For real exchange, reads connection record and decrypts creds via KMS.
+- KMS in-memory decrypt cache: Map keyed by ciphertext base64, 5-min TTL, max 100 entries. `keys().next().value` eviction is FIFO by insertion order — this is correct for JavaScript Map.
+- `create-connection.ts` auto-sets active on first connection via read-then-write (GetItem check then PutItem). This is NOT atomic — concurrent first-connection calls can both see no ACTIVE record and both write it. The result is idempotent (both write same exchangeId) but technically racy.
+- `delete-connection.ts`: does NOT guard against deleting the ACTIVE sentinel directly (`connectionId = 'ACTIVE'`). A user who crafts `DELETE /exchange/connections/ACTIVE` will delete their active preference record without touching the real connection record.
+- `create-connection.ts` body is parsed with bare `JSON.parse(event.body ?? '{}')` — malformed JSON body throws unhandled and returns 502. Should wrap in try/catch with 400 response.
+- `set-active-exchange.ts` same issue — bare JSON.parse without try/catch.
+- `getAdapter` is called with `resolved.exchangeId` in get-balance/get-pairs/list-orders, but `resolved.exchangeId` can only be non-demo when credentials are present, meaning Phase 1 stubs always throw and return 501. This is intentional.
+- Frontend: `ExchangeId` type and `EXCHANGE_NAMES` map are duplicated in ExchangeContext.tsx, Settings.tsx, and DashboardLayout.tsx. All three are local definitions, not imported from a shared package.
+- `CLAUDE.md` root line 78: domain-exchange description still says "DynamoDB (balances + orders)" — not updated to include the new connections table and KMS key.
+- Test coverage gap: `create-connection`, `list-connections`, `delete-connection`, `set-active-exchange`, `get-active-exchange`, `resolveActiveExchange`, and `crypto.ts` (encrypt/decrypt/maskApiKey) have NO tests in routes.test.ts.
+- IAM for exchangeHandler: `connectionsTable.grant(handler, 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem', 'dynamodb:Query')` — correct granular grants, matches all operations used.
+- KMS grants: `credentialsKey.grant(exchangeHandler, 'kms:Encrypt', 'kms:Decrypt')` — correct. kms:GenerateDataKey not needed for direct KMS Encrypt/Decrypt.
+- Account deletion: `deleteAllByPartitionKey` with `skName='connectionId'` used for connections table — correct because `connectionId` is not a DynamoDB reserved word.
+- `baseCurrency` defaults to 'USD' in both `get-active-exchange.ts` and `set-active-exchange.ts` demo fallback — this is intentional (demo uses USD). But demo EXCHANGE_BASE_CURRENCIES includes 'USD', 'AUD', 'USDT' — the hardcoded 'USD' fallback may not match what demo get-balance returns (which hardcodes 'AUD'). Minor inconsistency.

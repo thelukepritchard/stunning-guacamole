@@ -3,6 +3,9 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { evaluateRuleGroup } from '../../shared/rule-evaluator';
 import type { BotAction, BotRecord, IndicatorSnapshot, SizingConfig, TradeTrigger, TradeRecord, DemoOrderRecord } from '../../shared/types';
+import { resolveBotExchange } from '../../exchange/resolve-bot-exchange';
+import type { ResolvedExchange } from '../../exchange/resolve-exchange';
+import { getAdapter } from '../../exchange/adapters';
 
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const DEMO_EXCHANGE_API_URL = process.env.DEMO_EXCHANGE_API_URL!;
@@ -50,54 +53,82 @@ async function queryActiveBotsByPair(pair: string): Promise<BotRecord[]> {
 }
 
 /**
- * Fetches the user's current demo exchange balance.
+ * Fetches the user's balance from the appropriate exchange.
+ *
+ * For demo: calls the internal demo exchange API.
+ * For real exchanges: calls the adapter's getBalance method and extracts
+ * the relevant base and quote asset amounts.
  *
  * @param sub - The user's Cognito sub.
- * @returns The user's USD and BTC balances.
+ * @param resolved - The resolved exchange context.
+ * @param pair - The trading pair (e.g. "BTC").
+ * @returns The base (quote currency) and quote (pair asset) balances.
  */
-async function fetchDemoBalance(sub: string): Promise<{ usd: number; btc: number }> {
-  const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/balance?sub=${encodeURIComponent(sub)}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch demo balance: ${res.status}`);
+async function fetchBalance(sub: string, resolved: ResolvedExchange, pair: string): Promise<{ base: number; quote: number }> {
+  if (resolved.exchangeId === 'demo') {
+    const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/balance?sub=${encodeURIComponent(sub)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to fetch demo balance: ${res.status}`);
+    const data = (await res.json()) as { usd: number; btc: number };
+    return { base: data.usd, quote: data.btc };
   }
-  return (await res.json()) as { usd: number; btc: number };
+
+  // Real exchange — use adapter
+  const adapter = getAdapter(resolved.exchangeId);
+  const balance = await adapter.getBalance(resolved.credentials!);
+
+  const baseCurrency = resolved.credentials!.baseCurrency;
+  const baseHolding = balance.holdings.find((h) => h.asset === baseCurrency);
+  const quoteHolding = balance.holdings.find((h) => h.asset === pair);
+
+  return {
+    base: baseHolding?.amount ?? 0,
+    quote: quoteHolding?.amount ?? 0,
+  };
 }
 
 /**
- * Calculates the order size in BTC based on the bot's sizing configuration.
+ * Calculates the order size in the pair asset based on the bot's sizing configuration.
  *
- * - Fixed sizing: converts the dollar amount to BTC at the current price.
+ * - Fixed sizing: converts the currency amount to pair units at the current price.
  * - Percentage sizing: fetches the current balance and computes the fraction.
- *   For buys, percentage is applied to available USD. For sells, to held BTC.
+ *   For buys, percentage is applied to available base currency. For sells, to held pair asset.
  *
  * @param sub - The user's Cognito sub.
+ * @param resolved - The resolved exchange context.
  * @param action - The trade action (buy or sell).
  * @param sizing - Position sizing configuration.
- * @param price - The current BTC price.
- * @returns The order size in BTC.
+ * @param price - The current pair price.
+ * @param pair - The trading pair (e.g. "BTC").
+ * @returns The order size in the pair asset.
  */
 async function calculateOrderSize(
   sub: string,
+  resolved: ResolvedExchange,
   action: BotAction,
   sizing: SizingConfig,
   price: number,
+  pair: string,
 ): Promise<number> {
   if (sizing.type === 'fixed') {
-    return sizing.value / price;
+    // Truncate to 8 decimal places to avoid floating-point precision issues
+    return Math.floor((sizing.value / price) * 1e8) / 1e8;
   }
 
   // Percentage sizing — need current balance
-  const balance = await fetchDemoBalance(sub);
+  const balance = await fetchBalance(sub, resolved, pair);
 
   if (action === 'buy') {
-    const dollarAmount = balance.usd * (sizing.value / 100);
+    const dollarAmount = balance.base * (sizing.value / 100);
     return dollarAmount / price;
   }
-  return balance.btc * (sizing.value / 100);
+  // Truncate sell size to 8 decimal places to prevent floating-point overshoot
+  // that causes "Insufficient balance" errors on the demo exchange
+  const rawSize = balance.quote * (sizing.value / 100);
+  return Math.floor(rawSize * 1e8) / 1e8;
 }
 
-/** Result of a demo exchange order placement. */
+/** Result of an exchange order placement. */
 interface OrderResult {
   status: 'filled' | 'failed';
   orderId?: string;
@@ -105,35 +136,59 @@ interface OrderResult {
 }
 
 /**
- * Places a market order on the demo exchange via the internal API.
- * Parses the response to determine order outcome (filled or failed).
+ * Places a market order on the appropriate exchange.
+ *
+ * For demo: calls the internal demo exchange API.
+ * For real exchanges: calls the adapter's placeOrder method.
+ *
  * Logs errors but does not throw — exchange execution failures should
  * not prevent trade signal recording.
  *
  * @param sub - The user's Cognito sub.
+ * @param resolved - The resolved exchange context.
  * @param pair - The trading pair (e.g. "BTC").
  * @param side - The order side ("buy" or "sell").
- * @param size - The order size in BTC.
+ * @param size - The order size in the pair asset.
  * @returns The order result with status and optional orderId.
  */
-async function placeExchangeOrder(sub: string, pair: string, side: BotAction, size: number): Promise<OrderResult> {
-  const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/orders`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sub, pair, side, size }),
-  });
+async function placeExchangeOrder(
+  sub: string,
+  resolved: ResolvedExchange,
+  pair: string,
+  side: BotAction,
+  size: number,
+): Promise<OrderResult> {
+  if (resolved.exchangeId === 'demo') {
+    const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/orders`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sub, pair, side, size }),
+    });
 
-  const body = await res.json() as Partial<DemoOrderRecord>;
-  const orderStatus = body.status === 'filled' ? 'filled' as const : 'failed' as const;
+    const body = await res.json() as Partial<DemoOrderRecord>;
+    const orderStatus = body.status === 'filled' ? 'filled' as const : 'failed' as const;
 
-  if (orderStatus === 'failed') {
-    console.error('Demo exchange order failed:', { status: res.status, sub, pair, side, size, failReason: body.failReason });
-  } else {
-    console.log('Demo exchange order placed:', { sub, pair, side, size, orderId: body.orderId });
+    if (orderStatus === 'failed') {
+      console.error('Demo exchange order failed:', { status: res.status, sub, pair, side, size, failReason: body.failReason });
+    } else {
+      console.log('Demo exchange order placed:', { sub, pair, side, size, orderId: body.orderId });
+    }
+
+    return { status: orderStatus, orderId: body.orderId, failReason: body.failReason };
   }
 
-  return { status: orderStatus, orderId: body.orderId, failReason: body.failReason };
+  // Real exchange — use adapter
+  const adapter = getAdapter(resolved.exchangeId);
+  const result = await adapter.placeOrder(resolved.credentials!, { pair, side, size });
+
+  if (result.status === 'failed') {
+    console.error(`${resolved.exchangeId} order failed:`, { sub, pair, side, size, failReason: result.failReason });
+  } else {
+    console.log(`${resolved.exchangeId} order placed:`, { sub, pair, side, size, orderId: result.orderId });
+  }
+
+  return result;
 }
 
 /** Result of exchange execution, including order tracking fields. */
@@ -144,9 +199,9 @@ interface ExchangeResult {
 }
 
 /**
- * Executes a trade on the demo exchange using the bot's sizing config.
- * Calculates the order size and places the order. If no sizing is
- * configured, logs a warning and skips execution.
+ * Executes a trade on the appropriate exchange using the bot's sizing config.
+ * Resolves the bot's exchange, calculates the order size, and places the order.
+ * If no sizing is configured, logs a warning and skips execution.
  *
  * Catches all errors internally — exchange execution failures must not
  * prevent trade signal recording or leave the bot in an inconsistent state.
@@ -170,17 +225,20 @@ async function executeOnExchange(bot: BotRecord, action: BotAction, price: numbe
   }
 
   try {
-    const size = await calculateOrderSize(bot.sub, action, sizing, price);
+    const exchangeId = bot.exchangeId ?? 'demo';
+    const resolved = await resolveBotExchange(bot.sub, exchangeId);
+
+    const size = await calculateOrderSize(bot.sub, resolved, action, sizing, price, bot.pair);
     if (size <= 0) {
       console.warn('Calculated order size is zero or negative, skipping:', { botId: bot.botId, action, size });
       return { orderStatus: 'skipped' };
     }
 
-    const result = await placeExchangeOrder(bot.sub, bot.pair, action, size);
+    const result = await placeExchangeOrder(bot.sub, resolved, bot.pair, action, size);
     return { orderStatus: result.status, orderId: result.orderId, failReason: result.failReason };
   } catch (err) {
     console.error('Exchange execution failed:', { botId: bot.botId, action }, err);
-    return { orderStatus: 'skipped' };
+    return { orderStatus: 'failed', failReason: (err as Error).message ?? 'Exchange execution error' };
   }
 }
 
@@ -210,6 +268,7 @@ async function recordTrade(
     action,
     price: indicators.price,
     trigger,
+    exchangeId: bot.exchangeId ?? 'demo',
     indicators,
     createdAt: new Date().toISOString(),
   };
@@ -226,6 +285,7 @@ async function recordTrade(
 
   console.log(`${action.charAt(0).toUpperCase() + action.slice(1)} trade signal recorded:`, {
     botId: bot.botId, price: indicators.price, trigger, orderStatus: exchangeResult?.orderStatus,
+    exchangeId: bot.exchangeId ?? 'demo',
   });
 }
 
@@ -503,6 +563,9 @@ async function executeConditionCooldown(bot: BotRecord, action: BotAction, indic
  * fans out to all active bots for the pair.
  *
  * For each bot, both buy and sell actions are evaluated independently.
+ * Trade execution is routed to the correct exchange based on the bot's
+ * exchangeId — demo bots use the internal demo exchange API, while real
+ * exchange bots use the adapter system with decrypted credentials.
  *
  * Execution behaviour depends on the bot's configured execution mode:
  *

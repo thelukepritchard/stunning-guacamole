@@ -42,6 +42,7 @@ function buildBot(): BotRecord {
     pair: 'BTC',
     status: 'active',
     executionMode: 'once_and_wait',
+    exchangeId: 'demo',
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-01T00:00:00.000Z',
   };

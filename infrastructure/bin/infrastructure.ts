@@ -107,7 +107,7 @@ class InfrastructureStack extends cdk.Stack {
       authorizer: restApi.authorizer,
     });
 
-    // Executor — rule evaluation + trades (depends on bots table + market SNS topic)
+    // Executor — rule evaluation + trades (depends on bots table + market SNS topic + exchange connections)
     const executor = new DomainExecutorStack(this, `DomainExecutorStack`, {
       name,
       environment,
@@ -116,6 +116,8 @@ class InfrastructureStack extends cdk.Stack {
       botsTable: bots.botsTable,
       indicatorsTopic: market.indicatorsTopic,
       demoExchangeApiUrl: exchange.demoExchangeApi.url,
+      connectionsTable: exchange.connectionsTable,
+      credentialsKey: exchange.credentialsKey,
     });
 
     // Backtesting — backtest workflow (depends on bots table + price history table)

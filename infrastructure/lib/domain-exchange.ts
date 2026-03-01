@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as cdk from 'aws-cdk-lib/core';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
@@ -23,9 +24,10 @@ export interface DomainExchangeStackProps extends cdk.NestedStackProps {
  *
  * Merges the former orderbook (exchange proxy) and demo-exchange domains.
  * Creates a standalone unauthenticated regional REST API for the demo
- * exchange (internal use), DynamoDB tables for demo balances and orders,
- * two Lambda handlers (public exchange proxy + internal demo exchange),
- * and Cognito-protected API routes under `/exchange` on the shared API.
+ * exchange (internal use), DynamoDB tables for demo balances, orders, and
+ * exchange connections, a KMS key for credential encryption, two Lambda
+ * handlers (public exchange proxy + internal demo exchange), and
+ * Cognito-protected API routes under `/exchange` on the shared API.
  */
 export class DomainExchangeStack extends cdk.NestedStack {
 
@@ -37,6 +39,12 @@ export class DomainExchangeStack extends cdk.NestedStack {
 
   /** The demo orders DynamoDB table (exposed for cross-domain references). */
   public readonly demoOrdersTable: dynamodb.Table;
+
+  /** The exchange connections DynamoDB table (exposed for cross-domain references). */
+  public readonly connectionsTable: dynamodb.Table;
+
+  /** The KMS key used to encrypt exchange credentials (exposed for cross-domain decrypt). */
+  public readonly credentialsKey: kms.Key;
 
   constructor(scope: Construct, id: string, props: DomainExchangeStackProps) {
     super(scope, id, props);
@@ -64,6 +72,22 @@ export class DomainExchangeStack extends cdk.NestedStack {
       tableName: `${props.name}-${props.environment}-exchange-demo-orders`,
       partitionKey: { name: 'sub', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'orderId', type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.connectionsTable = new dynamodb.Table(this, 'ConnectionsTable', {
+      tableName: `${props.name}-${props.environment}-exchange-connections`,
+      partitionKey: { name: 'sub', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'connectionId', type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // ─── KMS Key for Exchange Credentials ──────────────────────────
+
+    this.credentialsKey = new kms.Key(this, 'CredentialsKey', {
+      alias: `${props.name}-${props.environment}-exchange-credentials`,
+      description: 'Encrypts exchange API credentials at rest',
+      enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
@@ -126,8 +150,15 @@ export class DomainExchangeStack extends cdk.NestedStack {
       handler: 'handler',
       environment: {
         DEMO_EXCHANGE_API_URL: this.demoExchangeApi.url,
+        CONNECTIONS_TABLE_NAME: this.connectionsTable.tableName,
+        KMS_KEY_ID: this.credentialsKey.keyId,
       },
     });
+
+    this.connectionsTable.grant(exchangeHandler,
+      'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem', 'dynamodb:Query',
+    );
+    this.credentialsKey.grant(exchangeHandler, 'kms:Encrypt', 'kms:Decrypt');
 
     const exchangeIntegration = new apigateway.LambdaIntegration(exchangeHandler);
 
@@ -165,5 +196,22 @@ export class DomainExchangeStack extends cdk.NestedStack {
     const orderIdResource = ordersResource.addResource('{orderId}');
     orderIdResource.addCorsPreflight(corsOptions);
     orderIdResource.addMethod('DELETE', exchangeIntegration, methodOptions);
+
+    // /exchange/connections
+    const connectionsResource = exchangeResource.addResource('connections');
+    connectionsResource.addCorsPreflight(corsOptions);
+    connectionsResource.addMethod('POST', exchangeIntegration, methodOptions);
+    connectionsResource.addMethod('GET', exchangeIntegration, methodOptions);
+
+    // /exchange/connections/{connectionId}
+    const connectionIdResource = connectionsResource.addResource('{connectionId}');
+    connectionIdResource.addCorsPreflight(corsOptions);
+    connectionIdResource.addMethod('DELETE', exchangeIntegration, methodOptions);
+
+    // /exchange/active
+    const activeResource = exchangeResource.addResource('active');
+    activeResource.addCorsPreflight(corsOptions);
+    activeResource.addMethod('PUT', exchangeIntegration, methodOptions);
+    activeResource.addMethod('GET', exchangeIntegration, methodOptions);
   }
 }

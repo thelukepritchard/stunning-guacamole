@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as cdk from 'aws-cdk-lib/core';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
@@ -25,6 +26,10 @@ export interface DomainExecutorStackProps extends cdk.NestedStackProps {
   indicatorsTopic: sns.Topic;
   /** The base URL of the demo exchange internal API. */
   demoExchangeApiUrl: string;
+  /** The exchange connections table (for resolving real exchange credentials). */
+  connectionsTable: dynamodb.Table;
+  /** The KMS key for decrypting exchange API credentials. */
+  credentialsKey: kms.Key;
 }
 
 /**
@@ -90,6 +95,8 @@ export class DomainExecutorStack extends cdk.NestedStack {
         BOTS_TABLE_NAME: props.botsTable.tableName,
         TRADES_TABLE_NAME: this.tradesTable.tableName,
         DEMO_EXCHANGE_API_URL: props.demoExchangeApiUrl,
+        CONNECTIONS_TABLE_NAME: props.connectionsTable.tableName,
+        KMS_KEY_ID: props.credentialsKey.keyId,
       },
     });
 
@@ -100,6 +107,9 @@ export class DomainExecutorStack extends cdk.NestedStack {
         this.tradesTable.tableArn,
       ],
     }));
+
+    props.connectionsTable.grantReadData(botExecutorHandler);
+    props.credentialsKey.grantDecrypt(botExecutorHandler);
 
     // SNS subscription — bot executor receives indicator ticks
     props.indicatorsTopic.addSubscription(

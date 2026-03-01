@@ -31,7 +31,21 @@ import { QueryBuilderMaterial } from '@react-querybuilder/material';
 import { botFields } from '../data/botFields';
 import { tradingPairs, type BotStatus, type ExecutionMode } from '../data/mockData';
 import { useApi } from '../hooks/useApi';
+import { useExchange } from '../contexts/ExchangeContext';
 import { colors } from '@shared/styles/tokens';
+
+/** Supported exchange identifiers. */
+type ExchangeId = 'demo' | 'swyftx' | 'coinspot' | 'coinjar' | 'kraken_pro' | 'binance';
+
+/** Human-readable exchange display names. */
+const EXCHANGE_NAMES: Record<ExchangeId, string> = {
+  demo: 'Demo',
+  swyftx: 'Swyftx',
+  coinspot: 'CoinSpot',
+  coinjar: 'CoinJar',
+  kraken_pro: 'Kraken Pro',
+  binance: 'Binance',
+};
 
 /** Position sizing type. */
 type SizingType = 'fixed' | 'percentage';
@@ -60,6 +74,7 @@ interface ApiBotRecord {
   pair: string;
   status: BotStatus;
   executionMode: ExecutionMode;
+  exchangeId?: ExchangeId;
   buyQuery?: RuleGroupType;
   sellQuery?: RuleGroupType;
   cooldownMinutes?: number;
@@ -172,6 +187,7 @@ function describeActions(bot: ApiBotRecord): string {
 export default function Bots() {
   const navigate = useNavigate();
   const { request } = useApi();
+  const { activeExchange } = useExchange();
   const [botList, setBotList] = useState<ApiBotRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -200,19 +216,19 @@ export default function Bots() {
   const [takeProfitEnabled, setTakeProfitEnabled] = useState(false);
   const [takeProfitPercentage, setTakeProfitPercentage] = useState<number | ''>('');
 
-  /** Fetch bots from the API. */
+  /** Fetch bots from the API, filtered by active exchange. */
   const fetchBots = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await request<{ items: ApiBotRecord[] }>('GET', '/bots');
+      const data = await request<{ items: ApiBotRecord[] }>('GET', `/bots?exchangeId=${activeExchange}`);
       setBotList(data.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load bots');
     } finally {
       setLoading(false);
     }
-  }, [request]);
+  }, [request, activeExchange]);
 
   useEffect(() => {
     fetchBots();
@@ -317,8 +333,8 @@ export default function Bots() {
         payload.takeProfit = takeProfit;
         await request('PUT', `/bots/${editingBot.botId}`, payload);
       } else {
-        // For create, only send present configs
-        const createPayload: Record<string, unknown> = { name, pair, executionMode };
+        // For create, only send present configs — include active exchange
+        const createPayload: Record<string, unknown> = { name, pair, executionMode, exchangeId: activeExchange };
         if (buyEnabled) createPayload.buyQuery = buyQuery;
         if (sellEnabled) createPayload.sellQuery = sellQuery;
         if (executionMode === 'condition_cooldown' && typeof cooldownMinutes === 'number' && cooldownMinutes > 0) {
@@ -775,6 +791,12 @@ export default function Bots() {
                       >
                         {bot.pair}
                       </Typography>
+                      <Chip
+                        label={EXCHANGE_NAMES[(bot.exchangeId ?? 'demo') as ExchangeId] ?? bot.exchangeId}
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontSize: '0.65rem', height: 20 }}
+                      />
                       <Typography variant="caption" color="text.secondary">
                         {describeActions(bot)} · {executionModeLabels[bot.executionMode]}
                       </Typography>

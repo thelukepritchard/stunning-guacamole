@@ -156,6 +156,7 @@ export async function handler(_event: ScheduledEvent): Promise<void> {
         pair: bot.pair,
         currentPrice,
         ...pnl,
+        exchangeId: bot.exchangeId ?? 'demo',
         ttl,
       };
 

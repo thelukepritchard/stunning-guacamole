@@ -214,6 +214,7 @@ export async function deleteAccount(event: APIGatewayProxyEvent): Promise<APIGat
     deleteAllByPartitionKey(process.env.TRADING_BOTS_TABLE_NAME!, 'sub', sub, 'botId'),
     deleteAllByPartitionKey(process.env.TRADING_BACKTESTS_TABLE_NAME!, 'sub', sub, 'backtestId'),
     deleteAllByPartitionKey(process.env.DEMO_ORDERS_TABLE_NAME!, 'sub', sub, 'orderId'),
+    deleteAllByPartitionKey(process.env.EXCHANGE_CONNECTIONS_TABLE_NAME!, 'sub', sub, 'connectionId'),
   ];
 
   // Tables not partitioned by sub — use GSI (sub-index)

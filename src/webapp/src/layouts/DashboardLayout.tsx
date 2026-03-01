@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router';
 import { signOut, fetchUserAttributes } from 'aws-amplify/auth';
 import AppBar from '@mui/material/AppBar';
@@ -11,6 +11,8 @@ import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
@@ -24,13 +26,21 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import EmojiEventsOutlinedIcon from '@mui/icons-material/EmojiEventsOutlined';
 import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
 import NewReleasesOutlinedIcon from '@mui/icons-material/NewReleasesOutlined';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import Tooltip from '@mui/material/Tooltip';
 import FeedbackDialog from '../components/FeedbackDialog';
-import { useApi } from '../hooks/useApi';
+import { useExchange } from '../contexts/ExchangeContext';
 import { gradients, colors } from '@shared/styles/tokens';
 
 const DRAWER_WIDTH = 260;
+
+/** Human-readable exchange display names. */
+const EXCHANGE_NAMES: Record<string, string> = {
+  demo: 'Demo Exchange',
+  swyftx: 'Swyftx',
+  coinspot: 'CoinSpot',
+  coinjar: 'CoinJar',
+  kraken_pro: 'Kraken Pro',
+  binance: 'Binance',
+};
 
 /** Navigation items for the sidebar. */
 const NAV_ITEMS = [
@@ -51,9 +61,8 @@ export default function DashboardLayout() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(false);
 
-  const { request } = useApi();
+  const { activeExchange, baseCurrency, connections, setActiveExchange } = useExchange();
 
   useEffect(() => {
     fetchUserAttributes()
@@ -65,70 +74,72 @@ export default function DashboardLayout() {
       .catch(() => {});
   }, []);
 
-  /** Fetches trading settings to determine if the user is in demo mode. */
-  const checkDemoMode = useCallback(async () => {
-    try {
-      const settings = await request<{ exchange: string }>('GET', '/settings');
-      setIsDemoMode(settings.exchange === 'demo');
-    } catch {
-      setIsDemoMode(true);
-    }
-  }, [request]);
-
-  useEffect(() => {
-    checkDemoMode();
-  }, [checkDemoMode]);
-
   /** Handles user sign-out and redirects to sign-in page. */
   const handleSignOut = async () => {
     await signOut();
     navigate('/sign-in', { replace: true });
   };
 
+  /** Handles exchange switcher selection. */
+  const handleExchangeChange = async (value: string) => {
+    if (value === 'manage') {
+      navigate('/settings');
+      setMobileOpen(false);
+      return;
+    }
+    try {
+      await setActiveExchange(value as 'demo' | 'swyftx' | 'coinspot' | 'coinjar' | 'kraken_pro' | 'binance');
+    } catch {
+      // Silently fail — context keeps current state
+    }
+  };
+
   const sidebarContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* App Title */}
       <Box sx={{ px: 2.5, py: 2.5 }}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <Typography
-            variant="h6"
-            fontWeight={700}
-            sx={{
-              background: gradients.primary,
-              backgroundClip: 'text',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            Signalr
-          </Typography>
-          {isDemoMode && (
-            <Tooltip
-              title="You are in demo mode. Configure API keys for an exchange in Settings to make actual trades."
-              arrow
-              placement="right"
-            >
-              <Box
-                sx={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: '50%',
-                  bgcolor: 'error.main',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-                onClick={() => navigate('/settings')}
-              >
-                <ErrorOutlineIcon sx={{ fontSize: 14, color: 'white' }} />
-              </Box>
-            </Tooltip>
-          )}
-        </Stack>
+        <Typography
+          variant="h6"
+          fontWeight={700}
+          sx={{
+            background: gradients.primary,
+            backgroundClip: 'text',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            letterSpacing: '-0.02em',
+          }}
+        >
+          Signalr
+        </Typography>
       </Box>
+
+      {/* Exchange Switcher */}
+      <Box sx={{ px: 2, pb: 1.5 }}>
+        <Select
+          value={activeExchange}
+          onChange={(e) => handleExchangeChange(e.target.value)}
+          size="small"
+          fullWidth
+          sx={{ fontSize: '0.8125rem' }}
+          renderValue={(value) => {
+            const displayName = EXCHANGE_NAMES[value] ?? value;
+            if (value === 'demo') return displayName;
+            return `${displayName} (${baseCurrency})`;
+          }}
+        >
+          <MenuItem value="demo">Demo Exchange</MenuItem>
+          {connections.map((conn) => (
+            <MenuItem key={conn.exchangeId} value={conn.exchangeId}>
+              {EXCHANGE_NAMES[conn.exchangeId] ?? conn.exchangeId} ({conn.baseCurrency})
+            </MenuItem>
+          ))}
+          <Divider />
+          <MenuItem value="manage" sx={{ color: 'primary.main', fontSize: '0.8125rem' }}>
+            Manage Connections...
+          </MenuItem>
+        </Select>
+      </Box>
+
       <Divider />
 
       {/* Navigation */}

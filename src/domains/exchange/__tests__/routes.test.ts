@@ -5,6 +5,12 @@ import { buildEvent } from '../../test-utils';
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
+// ─── Mock resolveActiveExchange ──────────────────────────────────────────────
+
+jest.mock('../resolve-exchange', () => ({
+  resolveActiveExchange: jest.fn().mockResolvedValue({ exchangeId: 'demo' }),
+}));
+
 // ─── Route imports ────────────────────────────────────────────────────────────
 
 import { getBalance } from '../routes/get-balance';

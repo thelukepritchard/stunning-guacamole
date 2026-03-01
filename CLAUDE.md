@@ -39,7 +39,11 @@ src/
     ├── exchange/         # Exchange domain — exchange proxy + demo exchange
     │   ├── index.ts      # Lambda entry point (public proxy) + route dispatch
     │   ├── utils.ts      # jsonResponse helper, RouteHandler type, DEMO_EXCHANGE_API_URL
-    │   ├── routes/       # API route handlers (balance, pairs, orders, cancel) — proxies to demo exchange
+    │   ├── routes/       # API route handlers (balance, pairs, orders, cancel, connections CRUD, active exchange)
+    │   ├── adapters/    # Exchange adapter interface + implementations (swyftx, coinspot)
+    │   ├── crypto.ts    # KMS encrypt/decrypt with in-memory cache + maskApiKey
+    │   ├── resolve-exchange.ts  # Resolves user's active exchange + decrypts credentials
+    │   ├── resolve-bot-exchange.ts  # Resolves credentials for a specific exchange by exchangeId (used by bot executor)
     │   └── demo/         # Internal demo exchange (unauthenticated regional API)
     │       ├── index.ts  # Lambda entry point + route dispatch
     │       ├── utils.ts  # jsonResponse helper
@@ -75,7 +79,7 @@ infrastructure/           # AWS CDK v2 project (separate package)
     ├── domain-bots.ts        # Bots Lambda + DynamoDB (bots + settings) + KMS + API routes under /bots, /settings (DomainBotsStack)
     ├── domain-market.ts      # Market Lambda (2 functions) + DynamoDB (price-history) + SNS + EventBridge 1-min schedule + API routes under /market (DomainMarketStack)
     ├── domain-executor.ts    # Executor Lambda (2 functions) + DynamoDB (trades) + SNS subscription + API routes under /trades (DomainExecutorStack)
-    ├── domain-exchange.ts    # Exchange Lambda (2 functions) + Demo Exchange regional API + DynamoDB (balances + orders) + API routes under /exchange (DomainExchangeStack)
+    ├── domain-exchange.ts    # Exchange Lambda (2 functions) + Demo Exchange regional API + DynamoDB (balances, orders, connections) + KMS key (credential encryption) + API routes under /exchange (DomainExchangeStack)
     ├── domain-analytics.ts   # Analytics Lambda (3 functions) + DynamoDB (bot-performance + portfolio-performance) + 2x EventBridge 5-min schedules + API routes under /analytics (DomainAnalyticsStack)
     ├── domain-backtesting.ts # Backtesting Lambda (4 functions) + DynamoDB (backtests) + S3 (backtest-reports) + Step Functions workflow + API routes under /backtests (DomainBacktestingStack)
     ├── domain-account.ts     # Account Lambda + DynamoDB (feedback) + cross-domain deletion + API routes under /feedback, /account (DomainAccountStack)

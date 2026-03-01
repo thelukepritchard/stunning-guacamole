@@ -96,6 +96,11 @@ export async function updateBot(event: APIGatewayProxyEvent): Promise<APIGateway
 
   const body = JSON.parse(event.body ?? '{}');
 
+  // exchangeId is immutable — reject attempts to change it
+  if (body.exchangeId !== undefined) {
+    return jsonResponse(400, { error: 'exchangeId cannot be changed after creation' });
+  }
+
   // Validate executionMode if provided
   if (body.executionMode !== undefined
     && body.executionMode !== 'once_and_wait'

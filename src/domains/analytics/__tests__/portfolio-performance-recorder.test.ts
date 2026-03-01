@@ -51,6 +51,7 @@ function buildBotPerf(overrides: Partial<BotPerformanceRecord> = {}): BotPerform
     netPnl: 10_000,
     netPosition: 0,
     winRate: 100,
+    exchangeId: 'demo',
     ttl: Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60,
     ...overrides,
   };

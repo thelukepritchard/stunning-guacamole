@@ -67,6 +67,7 @@ function buildBot(overrides: Partial<BotRecord> = {}): BotRecord {
     pair: 'BTC',
     status: 'active',
     executionMode: 'once_and_wait',
+    exchangeId: 'demo',
     buyQuery: ALWAYS_TRUE_QUERY,
     sellQuery: ALWAYS_TRUE_QUERY,
     createdAt: '2024-01-01T00:00:00.000Z',
@@ -604,11 +605,11 @@ describe('bot-executor — executeOnExchange and sizing', () => {
     const indicators = buildIndicators(50_000);
     await expect(handler(buildSnsEvent(indicators))).resolves.toBeUndefined();
 
-    // Trade should still be recorded with skipped orderStatus
+    // Trade should still be recorded with failed orderStatus (exchange error)
     const { PutCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { PutCommand: jest.Mock };
     expect(PutCommand).toHaveBeenCalledTimes(1);
     const tradeItem = PutCommand.mock.calls[0][0].Item;
-    expect(tradeItem.orderStatus).toBe('skipped');
+    expect(tradeItem.orderStatus).toBe('failed');
   });
 });
 

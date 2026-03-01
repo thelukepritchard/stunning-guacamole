@@ -1,10 +1,14 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { jsonResponse, DEMO_EXCHANGE_API_URL } from '../utils';
 import type { OrdersResponse, OrderResponse } from '../../shared/types';
+import { resolveActiveExchange } from '../resolve-exchange';
+import { getAdapter } from '../adapters';
 
 /**
- * Returns the user's orders from their configured exchange.
- * Currently all users are routed to the demo exchange.
+ * Returns the user's orders from their active exchange.
+ *
+ * Resolves the user's active exchange and delegates to the appropriate
+ * adapter. For demo mode, fetches orders from the demo exchange.
  *
  * @param event - Cognito-authenticated API Gateway event.
  * @returns Normalised JSON orders response.
@@ -15,6 +19,20 @@ export async function listOrders(event: APIGatewayProxyEvent): Promise<APIGatewa
     return jsonResponse(401, { error: 'Unauthorized' });
   }
 
+  const resolved = await resolveActiveExchange(sub);
+
+  // Real exchange — delegate to adapter
+  if (resolved.exchangeId !== 'demo' && resolved.credentials) {
+    try {
+      const adapter = getAdapter(resolved.exchangeId);
+      const orders = await adapter.getOrders(resolved.credentials);
+      return jsonResponse(200, orders);
+    } catch {
+      return jsonResponse(501, { error: `${resolved.exchangeId} orders not yet supported — coming soon` });
+    }
+  }
+
+  // Demo exchange
   const url = `${DEMO_EXCHANGE_API_URL}demo-exchange/orders?sub=${encodeURIComponent(sub)}`;
 
   let res: Response;

@@ -4,8 +4,8 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { jsonResponse } from '../utils';
-import type { BotRecord } from '../../shared/types';
-import { BOTS_EVENT_SOURCE } from '../../shared/types';
+import type { BotRecord, ExchangeId } from '../../shared/types';
+import { BOTS_EVENT_SOURCE, EXCHANGES } from '../../shared/types';
 import type { BotCreatedDetail } from '../../shared/types';
 
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -83,7 +83,7 @@ export async function createBot(event: APIGatewayProxyEvent): Promise<APIGateway
 
   const {
     name, pair, executionMode, buyQuery, sellQuery, cooldownMinutes,
-    buySizing, sellSizing, stopLoss, takeProfit,
+    buySizing, sellSizing, stopLoss, takeProfit, exchangeId: rawExchangeId,
   } = JSON.parse(event.body ?? '{}');
 
   if (!name || !pair || !executionMode) {
@@ -104,6 +104,12 @@ export async function createBot(event: APIGatewayProxyEvent): Promise<APIGateway
 
   if (cooldownMinutes !== undefined && (typeof cooldownMinutes !== 'number' || cooldownMinutes < 0)) {
     return jsonResponse(400, { error: 'cooldownMinutes must be a non-negative number' });
+  }
+
+  // Validate exchangeId — defaults to 'demo' if not provided
+  const exchangeId: ExchangeId = rawExchangeId ?? 'demo';
+  if (!(exchangeId in EXCHANGES)) {
+    return jsonResponse(400, { error: `Invalid exchangeId: ${exchangeId}` });
   }
 
   // Sizing is mandatory when the corresponding action has a query
@@ -136,6 +142,7 @@ export async function createBot(event: APIGatewayProxyEvent): Promise<APIGateway
     pair,
     status: 'draft',
     executionMode,
+    exchangeId,
     createdAt: now,
     updatedAt: now,
   };

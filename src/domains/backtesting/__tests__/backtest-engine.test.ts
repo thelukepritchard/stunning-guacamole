@@ -39,6 +39,7 @@ function buildBot(overrides: Partial<BotRecord> = {}): BotRecord {
     pair: 'BTC',
     status: 'active',
     executionMode: 'once_and_wait',
+    exchangeId: 'demo',
     buyQuery: ALWAYS_TRUE_QUERY,
     sellQuery: ALWAYS_TRUE_QUERY,
     createdAt: '2024-01-01T00:00:00.000Z',

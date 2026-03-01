@@ -4,6 +4,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme';
 import AuthGuard from './components/AuthGuard';
 import GuestGuard from './components/GuestGuard';
+import { ExchangeProvider } from './contexts/ExchangeContext';
 import DashboardLayout from './layouts/DashboardLayout';
 import SignIn from './pages/SignIn';
 import Register from './pages/Register';
@@ -32,7 +33,9 @@ export default function App() {
             path="/"
             element={
               <AuthGuard>
-                <DashboardLayout />
+                <ExchangeProvider>
+                  <DashboardLayout />
+                </ExchangeProvider>
               </AuthGuard>
             }
           >

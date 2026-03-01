@@ -5,7 +5,13 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
+import Dialog from '@mui/material/Dialog';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
+import Divider from '@mui/material/Divider';
 import Grid from '@mui/material/Grid2';
+import IconButton from '@mui/material/IconButton';
+import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -13,12 +19,14 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
+import CloseIcon from '@mui/icons-material/Close';
 import { useTheme } from '@mui/material/styles';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { PieChart } from '@mui/x-charts/PieChart';
 import StatCard from '../components/StatCard';
 import { useApi } from '../hooks/useApi';
+import { useExchange } from '../contexts/ExchangeContext';
 import { typography } from '@shared/styles/tokens';
 import { formatNumber, formatDollar } from '../utils/format';
 import type { Trend } from '../data/mockData';
@@ -40,6 +48,7 @@ interface BalanceResponse {
   currency: string;
   totalValue: number;
   holdings: HoldingEntry[];
+  message?: string;
 }
 
 /** Bot record from the trading API. */
@@ -65,6 +74,45 @@ interface OrderResponse {
   status: string;
 }
 
+/** Position sizing configuration. */
+interface SizingConfig {
+  type: 'fixed' | 'percentage';
+  value: number;
+}
+
+/** Indicator snapshot from the trading API. */
+interface IndicatorSnapshot {
+  price: number;
+  volume_24h: number;
+  price_change_pct: number;
+  rsi_14: number;
+  rsi_7: number;
+  macd_histogram: number;
+  macd_signal: string;
+  sma_20: number;
+  sma_50: number;
+  sma_200: number;
+  ema_12: number;
+  ema_20: number;
+  ema_26: number;
+  bb_upper: number;
+  bb_lower: number;
+  bb_position: string;
+}
+
+/** Supported exchange identifiers. */
+type ExchangeId = 'demo' | 'swyftx' | 'coinspot' | 'coinjar' | 'kraken_pro' | 'binance';
+
+/** Human-readable exchange display names. */
+const EXCHANGE_NAMES: Record<ExchangeId, string> = {
+  demo: 'Demo',
+  swyftx: 'Swyftx',
+  coinspot: 'CoinSpot',
+  coinjar: 'CoinJar',
+  kraken_pro: 'Kraken Pro',
+  binance: 'Binance',
+};
+
 /** Trade record from the trading API. */
 interface ApiTradeRecord {
   botId: string;
@@ -73,8 +121,12 @@ interface ApiTradeRecord {
   action: 'buy' | 'sell';
   price: number;
   trigger: string;
+  sizing?: SizingConfig;
   orderStatus?: 'filled' | 'failed' | 'skipped';
+  orderId?: string;
   failReason?: string;
+  exchangeId?: ExchangeId;
+  indicators?: IndicatorSnapshot;
   createdAt: string;
 }
 
@@ -138,6 +190,7 @@ const ALLOCATION_COLORS: Record<string, string> = {
 export default function Dashboard() {
   const theme = useTheme();
   const { request } = useApi();
+  const { activeExchange } = useExchange();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +199,7 @@ export default function Dashboard() {
   const [performance, setPerformance] = useState<PerformanceSnapshot[]>([]);
   const [orders, setOrders] = useState<OrderResponse[]>([]);
   const [trades, setTrades] = useState<ApiTradeRecord[]>([]);
+  const [selectedTrade, setSelectedTrade] = useState<ApiTradeRecord | null>(null);
 
   /** Fetch all dashboard data in parallel. */
   const fetchData = useCallback(async () => {
@@ -155,10 +209,10 @@ export default function Dashboard() {
 
       const [balanceRes, botsRes, perfRes, ordersRes, tradesRes] = await Promise.all([
         request<BalanceResponse>('GET', '/exchange/balance'),
-        request<{ items: ApiBotRecord[] }>('GET', '/bots'),
+        request<{ items: ApiBotRecord[] }>('GET', `/bots?exchangeId=${activeExchange}`),
         request<{ items: PerformanceSnapshot[] }>('GET', '/analytics/performance?period=30d'),
         request<{ exchange: string; orders: OrderResponse[] }>('GET', '/exchange/orders'),
-        request<{ items: ApiTradeRecord[] }>('GET', '/trades?limit=10'),
+        request<{ items: ApiTradeRecord[] }>('GET', `/trades?limit=10&exchangeId=${activeExchange}`),
       ]);
 
       setBalance(balanceRes);
@@ -171,7 +225,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [request]);
+  }, [request, activeExchange]);
 
   useEffect(() => {
     fetchData();
@@ -426,7 +480,7 @@ export default function Dashboard() {
               ) : (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
                   <Typography variant="body2" color="text.secondary">
-                    No holdings data yet
+                    {balance?.message ?? 'No funds found on this exchange'}
                   </Typography>
                 </Box>
               )}
@@ -477,7 +531,7 @@ export default function Dashboard() {
             ) : (
               <CardContent sx={{ textAlign: 'center', py: 4 }}>
                 <Typography variant="body2" color="text.secondary">
-                  No holdings data yet
+                  {balance?.message ?? 'No funds found on this exchange'}
                 </Typography>
               </CardContent>
             )}
@@ -506,7 +560,12 @@ export default function Dashboard() {
               </TableHead>
               <TableBody>
                 {trades.map((trade) => (
-                  <TableRow key={`${trade.botId}-${trade.timestamp}`}>
+                  <TableRow
+                    key={`${trade.botId}-${trade.timestamp}`}
+                    hover
+                    onClick={() => setSelectedTrade(trade)}
+                    sx={{ cursor: 'pointer' }}
+                  >
                     <TableCell sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.8125rem' }}>
                       {new Date(trade.createdAt).toLocaleTimeString()}
                     </TableCell>
@@ -559,6 +618,228 @@ export default function Dashboard() {
           </CardContent>
         )}
       </Card>
+
+      {/* Trade Detail Modal */}
+      <Dialog
+        open={!!selectedTrade}
+        onClose={() => setSelectedTrade(null)}
+        maxWidth="sm"
+        fullWidth
+      >
+        {selectedTrade && (
+          <>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+              <Stack direction="row" alignItems="center" spacing={1.5}>
+                <Chip
+                  label={selectedTrade.action === 'buy' ? 'Buy' : 'Sell'}
+                  color={selectedTrade.action === 'buy' ? 'success' : 'error'}
+                  size="small"
+                />
+                <Typography variant="h6">
+                  {selectedTrade.pair}
+                </Typography>
+              </Stack>
+              <IconButton size="small" onClick={() => setSelectedTrade(null)}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </DialogTitle>
+            <DialogContent>
+              {/* Order Status */}
+              <Box sx={{ mb: 2.5 }}>
+                <Chip
+                  label={
+                    selectedTrade.orderStatus === 'failed'
+                      ? 'Failed'
+                      : selectedTrade.orderStatus === 'skipped'
+                        ? 'Skipped'
+                        : 'Filled'
+                  }
+                  color={
+                    selectedTrade.orderStatus === 'failed'
+                      ? 'error'
+                      : selectedTrade.orderStatus === 'skipped'
+                        ? 'warning'
+                        : 'success'
+                  }
+                  size="small"
+                />
+                {selectedTrade.failReason && (
+                  <Typography variant="body2" color="error.main" sx={{ mt: 1 }}>
+                    {selectedTrade.failReason}
+                  </Typography>
+                )}
+              </Box>
+
+              <Divider sx={{ mb: 2 }} />
+
+              {/* Trade Details */}
+              <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Trade Details</Typography>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid size={6}>
+                  <Typography variant="caption" color="text.secondary">Price</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                    {formatDollar(selectedTrade.price)}
+                  </Typography>
+                </Grid>
+                <Grid size={6}>
+                  <Typography variant="caption" color="text.secondary">Trigger</Typography>
+                  <Typography variant="body2">
+                    {selectedTrade.trigger.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </Typography>
+                </Grid>
+                {selectedTrade.sizing && (
+                  <>
+                    <Grid size={6}>
+                      <Typography variant="caption" color="text.secondary">Position Size</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {selectedTrade.sizing.type === 'fixed'
+                          ? formatDollar(selectedTrade.sizing.value)
+                          : `${selectedTrade.sizing.value}%`}
+                      </Typography>
+                    </Grid>
+                    <Grid size={6}>
+                      <Typography variant="caption" color="text.secondary">Sizing Type</Typography>
+                      <Typography variant="body2">
+                        {selectedTrade.sizing.type === 'fixed' ? 'Fixed Amount' : 'Percentage'}
+                      </Typography>
+                    </Grid>
+                  </>
+                )}
+                {selectedTrade.sizing && selectedTrade.sizing.type === 'fixed' && selectedTrade.price > 0 && (
+                  <Grid size={6}>
+                    <Typography variant="caption" color="text.secondary">
+                      Est. {selectedTrade.pair} Quantity
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                      {formatNumber(selectedTrade.sizing.value / selectedTrade.price, 6)}
+                    </Typography>
+                  </Grid>
+                )}
+                <Grid size={6}>
+                  <Typography variant="caption" color="text.secondary">Exchange</Typography>
+                  <Typography variant="body2">
+                    {EXCHANGE_NAMES[(selectedTrade.exchangeId ?? 'demo') as ExchangeId] ?? selectedTrade.exchangeId}
+                  </Typography>
+                </Grid>
+                <Grid size={6}>
+                  <Typography variant="caption" color="text.secondary">Bot</Typography>
+                  <Typography variant="body2">
+                    {botNameMap.get(selectedTrade.botId) ?? selectedTrade.botId.slice(0, 8)}
+                  </Typography>
+                </Grid>
+                {selectedTrade.orderId && (
+                  <Grid size={12}>
+                    <Typography variant="caption" color="text.secondary">Order ID</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.75rem' }}>
+                      {selectedTrade.orderId}
+                    </Typography>
+                  </Grid>
+                )}
+              </Grid>
+
+              {/* Timestamps */}
+              <Divider sx={{ mb: 2 }} />
+              <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Timing</Typography>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid size={6}>
+                  <Typography variant="caption" color="text.secondary">Signal Time</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.75rem' }}>
+                    {new Date(selectedTrade.timestamp).toLocaleString()}
+                  </Typography>
+                </Grid>
+                <Grid size={6}>
+                  <Typography variant="caption" color="text.secondary">Recorded At</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono, fontSize: '0.75rem' }}>
+                    {new Date(selectedTrade.createdAt).toLocaleString()}
+                  </Typography>
+                </Grid>
+              </Grid>
+
+              {/* Market Indicators */}
+              {selectedTrade.indicators && (
+                <>
+                  <Divider sx={{ mb: 2 }} />
+                  <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Market Indicators at Signal</Typography>
+                  <Grid container spacing={2}>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">RSI (14)</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatNumber(selectedTrade.indicators.rsi_14, 1)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">RSI (7)</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatNumber(selectedTrade.indicators.rsi_7, 1)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">MACD Signal</Typography>
+                      <Typography variant="body2">
+                        {selectedTrade.indicators.macd_signal}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">SMA 20</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatDollar(selectedTrade.indicators.sma_20, 0)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">SMA 50</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatDollar(selectedTrade.indicators.sma_50, 0)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">SMA 200</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatDollar(selectedTrade.indicators.sma_200, 0)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">BB Upper</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatDollar(selectedTrade.indicators.bb_upper, 0)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">BB Lower</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatDollar(selectedTrade.indicators.bb_lower, 0)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">BB Position</Typography>
+                      <Typography variant="body2">
+                        {selectedTrade.indicators.bb_position}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">Volume (24h)</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatNumber(selectedTrade.indicators.volume_24h, 0)}
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">Price Change</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatNumber(selectedTrade.indicators.price_change_pct, 2)}%
+                      </Typography>
+                    </Grid>
+                    <Grid size={4}>
+                      <Typography variant="caption" color="text.secondary">MACD Histogram</Typography>
+                      <Typography variant="body2" sx={{ fontFamily: typography.fontFamily.mono }}>
+                        {formatNumber(selectedTrade.indicators.macd_histogram, 2)}
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </>
+              )}
+            </DialogContent>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 }

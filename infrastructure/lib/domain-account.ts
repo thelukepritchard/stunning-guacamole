@@ -84,6 +84,10 @@ export class DomainAccountStack extends cdk.NestedStack {
       this, 'DemoOrdersTableRef',
       `${props.name}-${props.environment}-exchange-demo-orders`,
     );
+    const exchangeConnectionsTable = dynamodb.Table.fromTableName(
+      this, 'ExchangeConnectionsTableRef',
+      `${props.name}-${props.environment}-exchange-connections`,
+    );
 
     const backtestReportsBucket = s3.Bucket.fromBucketName(
       this, 'BacktestReportsBucketRef',
@@ -110,6 +114,7 @@ export class DomainAccountStack extends cdk.NestedStack {
         TRADING_BACKTESTS_TABLE_NAME: tradingBacktestsTable.tableName,
         DEMO_BALANCES_TABLE_NAME: demoBalancesTable.tableName,
         DEMO_ORDERS_TABLE_NAME: demoOrdersTable.tableName,
+        EXCHANGE_CONNECTIONS_TABLE_NAME: exchangeConnectionsTable.tableName,
         BACKTEST_REPORTS_BUCKET_NAME: backtestReportsBucket.bucketName,
         USER_POOL_ID: props.userPool.userPoolId,
       },
@@ -129,6 +134,7 @@ export class DomainAccountStack extends cdk.NestedStack {
       tradingBacktestsTable,
       demoBalancesTable,
       demoOrdersTable,
+      exchangeConnectionsTable,
     ];
 
     for (const table of allUserTables) {

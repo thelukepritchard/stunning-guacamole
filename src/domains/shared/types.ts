@@ -73,6 +73,8 @@ export interface BotRecord {
   takeProfit?: TakeProfitConfig;
   /** Entry price set when a buy trade fires — used for SL/TP evaluation. */
   entryPrice?: number;
+  /** The exchange this bot trades on. Defaults to 'demo' for legacy bots. */
+  exchangeId: ExchangeId;
   createdAt: string;
   updatedAt: string;
 }
@@ -95,6 +97,8 @@ export interface TradeRecord {
   orderId?: string;
   /** Human-readable reason when orderStatus is 'failed' (e.g. "Insufficient USD balance"). */
   failReason?: string;
+  /** The exchange this trade was placed on. */
+  exchangeId: ExchangeId;
   indicators: IndicatorSnapshot;
   createdAt: string;
 }
@@ -178,6 +182,8 @@ export interface BotPerformanceRecord {
   netPosition: number;
   /** Percentage of sells where sell price exceeded average buy cost (0–100). */
   winRate: number;
+  /** The exchange this bot belongs to. */
+  exchangeId: ExchangeId;
   /** Epoch seconds for DynamoDB TTL (auto-expire after 90 days). */
   ttl: number;
 }
@@ -213,6 +219,9 @@ export const EXCHANGE_BASE_CURRENCIES: Record<ExchangeId, string[]> = {
 /** Selectable exchange identifiers — real exchanges the user can configure. Demo is not included; it is the implicit default. */
 export const SUPPORTED_EXCHANGES: ExchangeId[] = ['swyftx', 'coinspot', 'coinjar', 'kraken_pro', 'binance'];
 
+/** Phase 1 exchange identifiers — exchanges available for connection in the current release. */
+export const PHASE_1_EXCHANGES: ExchangeId[] = ['swyftx', 'coinspot'];
+
 /** DynamoDB trading settings item — one record per user storing exchange, base currency, and encrypted API credentials. Only created when a user configures a real exchange. */
 export interface TradingSettingsRecord {
   sub: string;
@@ -243,6 +252,66 @@ export interface ExchangeOption {
   description: string;
   baseCurrencies: string[];
   phase: 1 | 2;
+}
+
+// ─── Exchange Connection Types ──────────────────────────────────
+
+/** DynamoDB exchange connection item — one per exchange per user. SK = exchangeId (e.g. 'swyftx'). */
+export interface ExchangeConnectionRecord {
+  /** User ID (partition key). */
+  sub: string;
+  /** Exchange identifier (sort key). */
+  connectionId: string;
+  /** The exchange this connection is for. */
+  exchangeId: ExchangeId;
+  /** Base currency for this exchange (e.g. 'AUD'). */
+  baseCurrency: string;
+  /** Base64-encoded KMS-encrypted API key. */
+  encryptedApiKey: string;
+  /** Base64-encoded KMS-encrypted API secret. */
+  encryptedApiSecret: string;
+  /** Masked API key for display (last 4 characters). */
+  maskedApiKey: string;
+  /** ISO timestamp of creation. */
+  createdAt: string;
+  /** ISO timestamp of last update. */
+  updatedAt: string;
+}
+
+/** API response shape for exchange connections — secrets stripped, masked key only. */
+export interface ExchangeConnectionResponse {
+  /** Exchange identifier. */
+  exchangeId: ExchangeId;
+  /** Base currency for this exchange. */
+  baseCurrency: string;
+  /** Masked API key for display. */
+  maskedApiKey: string;
+  /** ISO timestamp of creation. */
+  createdAt: string;
+  /** ISO timestamp of last update. */
+  updatedAt: string;
+}
+
+/** DynamoDB active exchange preference — SK = 'ACTIVE'. */
+export interface ActiveExchangeRecord {
+  /** User ID (partition key). */
+  sub: string;
+  /** Literal 'ACTIVE' (sort key). */
+  connectionId: 'ACTIVE';
+  /** The active exchange. */
+  exchangeId: ExchangeId;
+  /** Base currency of the active exchange. */
+  baseCurrency: string;
+  /** ISO timestamp of last update. */
+  updatedAt: string;
+}
+
+/** API response shape for the active exchange. */
+export interface ActiveExchangeResponse {
+  /** The active exchange identifier. */
+  exchangeId: ExchangeId;
+  /** Base currency of the active exchange. */
+  baseCurrency: string;
 }
 
 // ─── Backtest Types ────────────────────────────────────────────

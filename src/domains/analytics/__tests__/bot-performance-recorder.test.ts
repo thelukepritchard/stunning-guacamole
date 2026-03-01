@@ -43,6 +43,7 @@ function buildBot(overrides: Partial<BotRecord> = {}): BotRecord {
     pair: 'BTC',
     status: 'active',
     executionMode: 'once_and_wait',
+    exchangeId: 'demo',
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-01T00:00:00.000Z',
     ...overrides,
@@ -61,6 +62,7 @@ function buildTrade(action: 'buy' | 'sell', price: number, botId = 'bot-1'): Tra
     action,
     price,
     trigger: 'rule',
+    exchangeId: 'demo',
     indicators: {
       price,
       volume_24h: 1_000_000,
