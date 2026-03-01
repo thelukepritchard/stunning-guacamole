@@ -15,15 +15,37 @@ const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
  * @param event - The incoming API Gateway event.
  * @returns A 201 JSON response with the created feedback item.
  */
+/** Allowed feedback categories. */
+const VALID_CATEGORIES = ['general', 'bug', 'feature', 'other'] as const;
+
+/** Maximum feedback message length. */
+const MAX_MESSAGE_LENGTH = 5000;
+
 export async function submitFeedback(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const { category, message } = JSON.parse(event.body ?? '{}');
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  const { category, message } = body;
   const email: string = event.requestContext.authorizer?.claims?.email ?? 'unknown';
+
+  const resolvedCategory = typeof category === 'string' && (VALID_CATEGORIES as readonly string[]).includes(category)
+    ? category
+    : 'general';
+
+  const resolvedMessage = typeof message === 'string' ? message.slice(0, MAX_MESSAGE_LENGTH) : '';
+  if (!resolvedMessage) {
+    return jsonResponse(400, { error: 'Message is required' });
+  }
 
   const item = {
     id: randomUUID(),
     email,
-    category: category ?? 'general',
-    message: message ?? '',
+    category: resolvedCategory,
+    message: resolvedMessage,
     createdAt: new Date().toISOString(),
   };
 

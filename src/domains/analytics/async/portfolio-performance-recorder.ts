@@ -107,6 +107,8 @@ export async function handler(_event: ScheduledEvent): Promise<void> {
   do {
     const scan = await ddbDoc.send(new ScanCommand({
       TableName: process.env.PORTFOLIO_TABLE_NAME!,
+      ProjectionExpression: '#sub',
+      ExpressionAttributeNames: { '#sub': 'sub' },
       ExclusiveStartKey: lastKey,
     }));
     users.push(...(scan.Items as PortfolioRecord[] ?? []));

@@ -1,14 +1,23 @@
 import { buildEvent } from '../../test-utils';
 
-// ─── Mock global fetch ────────────────────────────────────────────────────────
+// ─── Mock fetch-utils (fetchWithTimeout + fetchBtcPrice) ─────────────────────
+// This decouples the route tests from the Binance price cache implementation
+// and prevents btcPriceCache leakage across tests.
 
-const mockFetch = jest.fn();
-global.fetch = mockFetch;
+const mockFetchWithTimeout = jest.fn();
+const mockFetchBtcPrice = jest.fn();
+
+jest.mock('../../shared/fetch-utils', () => ({
+  fetchWithTimeout: (...args: unknown[]) => mockFetchWithTimeout(...args),
+  fetchBtcPrice: () => mockFetchBtcPrice(),
+}));
 
 // ─── Mock resolveActiveExchange ──────────────────────────────────────────────
 
+const mockResolveActiveExchange = jest.fn();
+
 jest.mock('../resolve-exchange', () => ({
-  resolveActiveExchange: jest.fn().mockResolvedValue({ exchangeId: 'demo' }),
+  resolveActiveExchange: (...args: unknown[]) => mockResolveActiveExchange(...args),
 }));
 
 // ─── Route imports ────────────────────────────────────────────────────────────
@@ -57,7 +66,13 @@ function mockFailResponse(status: number, data: unknown): Response {
 // ─── getBalance ───────────────────────────────────────────────────────────────
 
 describe('exchange getBalance', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.resetAllMocks();
+    // Restore resolveActiveExchange default: demo exchange
+    mockResolveActiveExchange.mockResolvedValue({ exchangeId: 'demo' });
+    // Default BTC price for all tests unless overridden
+    mockFetchBtcPrice.mockResolvedValue(50_000);
+  });
 
   /**
    * Should return 401 when unauthenticated.
@@ -68,33 +83,32 @@ describe('exchange getBalance', () => {
   });
 
   /**
-   * Should return 502 when fetch throws a network error.
+   * Should return 502 when the demo exchange balance fetch throws a network error.
    */
   it('should return 502 when fetch throws', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network error'));
+    mockFetchWithTimeout.mockRejectedValueOnce(new Error('Network error'));
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(502);
     expect(JSON.parse(result.body).error).toBe('Failed to reach demo exchange');
   });
 
   /**
-   * Should propagate upstream error status codes.
+   * Non-ok upstream responses are sanitized: the handler always returns 502
+   * rather than forwarding the upstream status code to avoid leaking internal
+   * service details to the client.
    */
-  it('should propagate upstream error status', async () => {
-    mockFetch
-      .mockResolvedValueOnce(mockFailResponse(503, { error: 'Service unavailable' }))
-      .mockResolvedValueOnce(mockOkResponse({ price: '50000.00' }));
+  it('should return 502 (sanitized) when demo exchange returns a non-ok status', async () => {
+    mockFetchWithTimeout.mockResolvedValueOnce(mockFailResponse(503, { error: 'Service unavailable' }));
     const result = await getBalance(authedEvent());
-    expect(result.statusCode).toBe(503);
+    expect(result.statusCode).toBe(502);
+    expect(JSON.parse(result.body).error).toBe('Failed to fetch balance from demo exchange');
   });
 
   /**
-   * Should return holdings with only USD for a new user (0 BTC).
+   * Should return holdings with only AUD for a new user with 0 BTC.
    */
   it('should return 1 holding for new user with 0 BTC', async () => {
-    mockFetch
-      .mockResolvedValueOnce(mockOkResponse({ usd: 1000, btc: 0 }))
-      .mockResolvedValueOnce(mockOkResponse({ price: '50000.00' }));
+    mockFetchWithTimeout.mockResolvedValueOnce(mockOkResponse({ usd: 1000, btc: 0 }));
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
@@ -107,12 +121,12 @@ describe('exchange getBalance', () => {
   });
 
   /**
-   * Should return holdings with USD and BTC after trading.
+   * Should return holdings with both AUD and BTC when the user holds BTC.
+   * BTC value = amount * price = 0.01 * 50,000 = 500.
    */
   it('should return 2 holdings when user has BTC', async () => {
-    mockFetch
-      .mockResolvedValueOnce(mockOkResponse({ usd: 500, btc: 0.01 }))
-      .mockResolvedValueOnce(mockOkResponse({ price: '50000.00' }));
+    mockFetchWithTimeout.mockResolvedValueOnce(mockOkResponse({ usd: 500, btc: 0.01 }));
+    mockFetchBtcPrice.mockResolvedValue(50_000);
     const result = await getBalance(authedEvent());
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body);
@@ -122,7 +136,7 @@ describe('exchange getBalance', () => {
     expect(body.holdings[0].value).toBe(500);
     expect(body.holdings[1].asset).toBe('BTC');
     expect(body.holdings[1].name).toBe('Bitcoin');
-    expect(body.holdings[1].price).toBe(50000);
+    expect(body.holdings[1].price).toBe(50_000);
     expect(body.holdings[1].value).toBe(500);
   });
 });
@@ -130,7 +144,10 @@ describe('exchange getBalance', () => {
 // ─── getPairs ─────────────────────────────────────────────────────────────────
 
 describe('exchange getPairs', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.resetAllMocks();
+    mockResolveActiveExchange.mockResolvedValue({ exchangeId: 'demo' });
+  });
 
   /**
    * Should return 401 when unauthenticated.
@@ -141,19 +158,20 @@ describe('exchange getPairs', () => {
   });
 
   /**
-   * Should return 502 when fetch throws.
+   * Should return 502 when the demo exchange is unreachable.
    */
   it('should return 502 when fetch throws', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network error'));
+    mockFetchWithTimeout.mockRejectedValueOnce(new Error('Network error'));
     const result = await getPairs(authedEvent());
     expect(result.statusCode).toBe(502);
+    expect(JSON.parse(result.body).error).toBe('Failed to reach demo exchange');
   });
 
   /**
-   * Should return 200 with normalised pairs response.
+   * Should return 200 with normalised pairs response on success.
    */
   it('should return 200 with normalised pairs on success', async () => {
-    mockFetch.mockResolvedValueOnce(mockOkResponse({
+    mockFetchWithTimeout.mockResolvedValueOnce(mockOkResponse({
       coins: [{ ticker: 'BTC', name: 'Bitcoin' }],
     }));
     const result = await getPairs(authedEvent());
@@ -170,7 +188,10 @@ describe('exchange getPairs', () => {
 // ─── listOrders ───────────────────────────────────────────────────────────────
 
 describe('exchange listOrders', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.resetAllMocks();
+    mockResolveActiveExchange.mockResolvedValue({ exchangeId: 'demo' });
+  });
 
   /**
    * Should return 401 when unauthenticated.
@@ -181,27 +202,28 @@ describe('exchange listOrders', () => {
   });
 
   /**
-   * Should return 502 when fetch throws.
+   * Should return 502 when the demo exchange is unreachable.
    */
   it('should return 502 when fetch throws', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network error'));
+    mockFetchWithTimeout.mockRejectedValueOnce(new Error('Network error'));
     const result = await listOrders(authedEvent());
     expect(result.statusCode).toBe(502);
+    expect(JSON.parse(result.body).error).toBe('Failed to reach demo exchange');
   });
 
   /**
-   * Should return 200 with normalised orders response.
+   * Should return 200 with normalised orders on success.
    */
   it('should return 200 with normalised orders on success', async () => {
-    mockFetch.mockResolvedValueOnce(mockOkResponse({
+    mockFetchWithTimeout.mockResolvedValueOnce(mockOkResponse({
       orders: [{
         orderId: 'o1',
         pair: 'BTC',
         side: 'buy',
         type: 'market',
         size: 0.1,
-        executedPrice: 50000,
-        total: 5000,
+        executedPrice: 50_000,
+        total: 5_000,
         status: 'filled',
         createdAt: '2024-01-01T00:00:00.000Z',
       }],
@@ -211,14 +233,17 @@ describe('exchange listOrders', () => {
     const body = JSON.parse(result.body);
     expect(body.exchange).toBe('demo');
     expect(body.orders).toHaveLength(1);
-    expect(body.orders[0].price).toBe(50000);
+    expect(body.orders[0].price).toBe(50_000);
   });
 });
 
 // ─── cancelOrder ─────────────────────────────────────────────────────────────
 
 describe('exchange cancelOrder', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.resetAllMocks();
+    mockResolveActiveExchange.mockResolvedValue({ exchangeId: 'demo' });
+  });
 
   /**
    * Should return 401 when unauthenticated.
@@ -229,7 +254,7 @@ describe('exchange cancelOrder', () => {
   });
 
   /**
-   * Should return 400 when orderId is missing.
+   * Should return 400 when orderId path parameter is missing.
    */
   it('should return 400 when orderId is missing', async () => {
     const result = await cancelOrder(authedEvent());
@@ -238,24 +263,23 @@ describe('exchange cancelOrder', () => {
   });
 
   /**
-   * Should return 502 when fetch throws.
+   * Should return 502 when the demo exchange is unreachable.
    */
   it('should return 502 when fetch throws', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('Network error'));
+    mockFetchWithTimeout.mockRejectedValueOnce(new Error('Network error'));
     const result = await cancelOrder(authedEvent({ pathParameters: { orderId: 'o1' } }));
     expect(result.statusCode).toBe(502);
+    expect(JSON.parse(result.body).error).toBe('Failed to reach demo exchange');
   });
 
   /**
-   * Should proxy the upstream response status and body.
+   * Non-ok upstream responses are sanitized: the handler always returns 502
+   * rather than forwarding the upstream status code to the client.
    */
-  it('should proxy upstream response', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 501,
-      json: async () => ({ error: 'Not supported' }),
-    } as unknown as Response);
+  it('should return 502 (sanitized) when demo exchange returns non-ok', async () => {
+    mockFetchWithTimeout.mockResolvedValueOnce(mockFailResponse(501, { error: 'Not supported' }));
     const result = await cancelOrder(authedEvent({ pathParameters: { orderId: 'o1' } }));
-    expect(result.statusCode).toBe(501);
+    expect(result.statusCode).toBe(502);
+    expect(JSON.parse(result.body).error).toBe('Failed to cancel order on demo exchange');
   });
 });

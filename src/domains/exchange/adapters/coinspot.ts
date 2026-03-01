@@ -2,6 +2,7 @@ import { createHmac } from 'crypto';
 import type { BalanceResponse, PairsResponse, OrdersResponse, HoldingEntry, PairResponse, OrderResponse } from '../../shared/types';
 import { COIN_NAMES } from '../../shared/types';
 import type { ExchangeAdapter, ExchangeCredentials, PlaceOrderParams, PlaceOrderResult } from './types';
+import { fetchWithTimeout } from '../../shared/fetch-utils';
 
 const BASE_URL = 'https://www.coinspot.com.au';
 
@@ -25,10 +26,10 @@ function sign(body: string, secret: string): string {
  * @returns The parsed JSON response.
  */
 async function signedRequest<T>(path: string, creds: ExchangeCredentials, extraBody: Record<string, unknown> = {}): Promise<T> {
-  const body = JSON.stringify({ nonce: Date.now(), ...extraBody });
+  const body = JSON.stringify({ nonce: Date.now() * 1000 + Math.floor(Math.random() * 1000), ...extraBody });
   const signature = sign(body, creds.apiSecret);
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetchWithTimeout(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -109,7 +110,7 @@ export const coinspotAdapter: ExchangeAdapter = {
    * Uses the public API to get latest coin prices.
    */
   async getPairs(_creds: ExchangeCredentials): Promise<PairsResponse> {
-    const res = await fetch(`${BASE_URL}/pubapi/v2/latest`);
+    const res = await fetchWithTimeout(`${BASE_URL}/pubapi/v2/latest`);
     if (!res.ok) throw new Error(`CoinSpot pairs failed: ${res.status}`);
 
     const data = (await res.json()) as {

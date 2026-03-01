@@ -48,6 +48,10 @@ export class RestApiStack extends cdk.NestedStack {
     this.api = new apigateway.RestApi(this, 'DomainRestApi', {
       restApiName: `${props.name}-${props.environment}-domain-rest-api`,
       endpointTypes: [apigateway.EndpointType.EDGE],
+      deployOptions: {
+        throttlingRateLimit: 100,
+        throttlingBurstLimit: 200,
+      },
     });
 
     this.authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoAuthorizer', {

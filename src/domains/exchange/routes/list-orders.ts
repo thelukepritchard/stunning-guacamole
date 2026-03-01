@@ -3,6 +3,7 @@ import { jsonResponse, DEMO_EXCHANGE_API_URL } from '../utils';
 import type { OrdersResponse, OrderResponse } from '../../shared/types';
 import { resolveActiveExchange } from '../resolve-exchange';
 import { getAdapter } from '../adapters';
+import { fetchWithTimeout } from '../../shared/fetch-utils';
 
 /**
  * Returns the user's orders from their active exchange.
@@ -37,14 +38,14 @@ export async function listOrders(event: APIGatewayProxyEvent): Promise<APIGatewa
 
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetchWithTimeout(url);
   } catch {
     return jsonResponse(502, { error: 'Failed to reach demo exchange' });
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Upstream error' }));
-    return jsonResponse(res.status, err);
+    console.error(`Demo exchange orders error: ${res.status}`);
+    return jsonResponse(502, { error: 'Failed to fetch orders from demo exchange' });
   }
 
   const data = (await res.json()) as {

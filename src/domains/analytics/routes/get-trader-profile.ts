@@ -33,7 +33,7 @@ export async function getTraderProfile(
   event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> {
   const username = event.pathParameters?.username;
-  if (!username) return jsonResponse(400, { error: 'Missing username' });
+  if (!username || username.trim().length === 0) return jsonResponse(400, { error: 'Missing username' });
   if (username.length > 50) return jsonResponse(400, { error: 'Invalid username' });
 
   const period = event.queryStringParameters?.period ?? '7d';

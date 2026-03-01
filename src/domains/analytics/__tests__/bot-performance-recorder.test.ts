@@ -87,13 +87,13 @@ function buildTrade(action: 'buy' | 'sell', price: number, botId = 'bot-1'): Tra
 
 /**
  * Configures mockSend for the standard single-bot handler flow:
- *   1. ScanCommand    — one page returning `bots`
+ *   1. QueryCommand   — status-index GSI query returning `bots` (one page, no pagination)
  *   2. QueryCommand   — price history lookup for the pair (returns `currentPrice`)
  *   3. QueryCommand   — trades for the bot (returns `trades`)
  *   4. PutCommand     — performance snapshot write
  *
  * Because priceLookups and writes both use Promise.all internally, the order
- * of DDB calls is: Scan → Query (price) → Query (trades) → Put.
+ * of DDB calls is: Query (bots) → Query (price) → Query (trades) → Put.
  * For a single bot this order is deterministic.
  */
 function mockSingleBotFlow(
@@ -101,7 +101,7 @@ function mockSingleBotFlow(
   currentPrice: number,
   trades: TradeRecord[],
 ): void {
-  // 1. Scan page — returns bots with no pagination
+  // 1. GSI query page — returns bots with no pagination
   mockSend.mockResolvedValueOnce({ Items: bots, LastEvaluatedKey: undefined });
   // 2. Price history query for the pair
   mockSend.mockResolvedValueOnce({ Items: [{ price: currentPrice }], LastEvaluatedKey: undefined });
@@ -299,16 +299,17 @@ describe('bot-performance-recorder handler', () => {
   // ── pagination ────────────────────────────────────────────────────────────
 
   /**
-   * The bot scan should follow pagination — when LastEvaluatedKey is set,
-   * the handler must continue scanning until it is cleared.
+   * The bot query should follow pagination — when LastEvaluatedKey is set,
+   * the handler must continue querying until it is cleared. The source now
+   * uses QueryCommand against the status-index GSI instead of a ScanCommand.
    */
-  it('should paginate the bot scan when LastEvaluatedKey is present', async () => {
+  it('should paginate the bot query when LastEvaluatedKey is present', async () => {
     const bot1 = buildBot({ botId: 'bot-1' });
     const bot2 = buildBot({ botId: 'bot-2' });
 
-    // Page 1 of scan — contains bot1 with a continuation key
+    // Page 1 of GSI query — contains bot1 with a continuation key
     mockSend.mockResolvedValueOnce({ Items: [bot1], LastEvaluatedKey: { sub: 'user-1', botId: 'bot-1' } });
-    // Page 2 of scan — contains bot2 with no continuation key
+    // Page 2 of GSI query — contains bot2 with no continuation key
     mockSend.mockResolvedValueOnce({ Items: [bot2], LastEvaluatedKey: undefined });
 
     // Both bots share the same pair — one price lookup
@@ -322,8 +323,19 @@ describe('bot-performance-recorder handler', () => {
 
     await handler(SCHEDULED_EVENT);
 
-    const { ScanCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { ScanCommand: jest.Mock };
-    expect(ScanCommand).toHaveBeenCalledTimes(2);
+    const { QueryCommand } = jest.requireMock('@aws-sdk/lib-dynamodb') as { QueryCommand: jest.Mock };
+    // QueryCommand is called: 2x for bot pagination + 1x price lookup + 2x trades = 5 total.
+    // We only assert the first two are the bot GSI pages.
+    expect(QueryCommand.mock.calls[0][0]).toMatchObject({
+      IndexName: 'status-index',
+      KeyConditionExpression: '#status = :active',
+    });
+    expect(QueryCommand.mock.calls[1][0]).toMatchObject({
+      IndexName: 'status-index',
+      KeyConditionExpression: '#status = :active',
+    });
+    // The second bot-query page must include the ExclusiveStartKey from page 1
+    expect(QueryCommand.mock.calls[1][0].ExclusiveStartKey).toEqual({ sub: 'user-1', botId: 'bot-1' });
   });
 
   // ── error resilience ──────────────────────────────────────────────────────

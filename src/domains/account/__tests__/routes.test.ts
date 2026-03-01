@@ -90,12 +90,13 @@ describe('submitFeedback', () => {
   });
 
   /**
-   * Should default message to empty string when not provided.
+   * Should return 400 when message is omitted, because a non-empty message
+   * is required after the input validation change.
    */
-  it('should default message to empty string when omitted', async () => {
+  it('should return 400 when message is omitted', async () => {
     const result = await submitFeedback(authedEvent({ body: JSON.stringify({}) }));
-    expect(result.statusCode).toBe(201);
-    expect(JSON.parse(result.body).message).toBe('');
+    expect(result.statusCode).toBe(400);
+    expect(JSON.parse(result.body).error).toContain('Message');
   });
 
   /**

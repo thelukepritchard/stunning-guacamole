@@ -1,17 +1,37 @@
 import type { BalanceResponse, PairsResponse, OrdersResponse, HoldingEntry, PairResponse, OrderResponse } from '../../shared/types';
 import type { ExchangeAdapter, ExchangeCredentials, PlaceOrderParams, PlaceOrderResult } from './types';
+import { fetchWithTimeout } from '../../shared/fetch-utils';
 
 const BASE_URL = 'https://api.swyftx.com.au';
 
+/** Cached Swyftx auth token with expiry. */
+interface TokenCache {
+  token: string;
+  expiresAt: number;
+}
+
+/** Module-level token cache keyed by API key hash (last 8 chars). */
+const tokenCache = new Map<string, TokenCache>();
+
+/** Token cache TTL (25 minutes — Swyftx tokens last 30 min). */
+const TOKEN_TTL_MS = 25 * 60 * 1000;
+
 /**
  * Obtains a Bearer access token from the Swyftx auth refresh endpoint.
+ * Caches the token for 25 minutes to avoid re-authenticating on every call.
  *
  * @param apiKey - The Swyftx API key.
  * @returns The access token string.
  * @throws If authentication fails.
  */
 async function authenticate(apiKey: string): Promise<string> {
-  const res = await fetch(`${BASE_URL}/auth/refresh/`, {
+  const cacheKey = apiKey.slice(-8);
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.token;
+  }
+
+  const res = await fetchWithTimeout(`${BASE_URL}/auth/refresh/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ apiKey }),
@@ -22,6 +42,7 @@ async function authenticate(apiKey: string): Promise<string> {
   const data = (await res.json()) as { accessToken?: string };
   if (!data.accessToken) throw new Error('Swyftx auth returned no access token');
 
+  tokenCache.set(cacheKey, { token: data.accessToken, expiresAt: Date.now() + TOKEN_TTL_MS });
   return data.accessToken;
 }
 
@@ -40,7 +61,7 @@ export const swyftxAdapter: ExchangeAdapter = {
     try {
       const token = await authenticate(creds.apiKey);
 
-      const userRes = await fetch(`${BASE_URL}/user/`, {
+      const userRes = await fetchWithTimeout(`${BASE_URL}/user/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -57,7 +78,7 @@ export const swyftxAdapter: ExchangeAdapter = {
   async getBalance(creds: ExchangeCredentials): Promise<BalanceResponse> {
     const token = await authenticate(creds.apiKey);
 
-    const res = await fetch(`${BASE_URL}/user/balance/`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/user/balance/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -71,7 +92,7 @@ export const swyftxAdapter: ExchangeAdapter = {
     }>;
 
     // Fetch asset info to map assetId to ticker/name
-    const assetsRes = await fetch(`${BASE_URL}/markets/info/basic/`, {
+    const assetsRes = await fetchWithTimeout(`${BASE_URL}/markets/info/basic/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const assets = assetsRes.ok
@@ -115,7 +136,7 @@ export const swyftxAdapter: ExchangeAdapter = {
   async getPairs(creds: ExchangeCredentials): Promise<PairsResponse> {
     const token = await authenticate(creds.apiKey);
 
-    const res = await fetch(`${BASE_URL}/markets/info/basic/`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/markets/info/basic/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -149,7 +170,7 @@ export const swyftxAdapter: ExchangeAdapter = {
   async getOrders(creds: ExchangeCredentials): Promise<OrdersResponse> {
     const token = await authenticate(creds.apiKey);
 
-    const res = await fetch(`${BASE_URL}/history/all/`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/history/all/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
@@ -189,7 +210,7 @@ export const swyftxAdapter: ExchangeAdapter = {
     try {
       const token = await authenticate(creds.apiKey);
 
-      const res = await fetch(`${BASE_URL}/orders/`, {
+      const res = await fetchWithTimeout(`${BASE_URL}/orders/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

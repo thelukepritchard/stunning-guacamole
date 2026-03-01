@@ -117,6 +117,12 @@ export class DomainAnalyticsStack extends cdk.NestedStack {
     this.botPerformanceTable.grantWriteData(botPerfRecorderHandler);
     props.priceHistoryTable.grantReadData(botPerfRecorderHandler);
 
+    // Explicit GSI grant for status-index on bots table
+    botPerfRecorderHandler.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:Query'],
+      resources: [`${props.botsTable.tableArn}/index/status-index`],
+    }));
+
     // Portfolio Performance Recorder handler — aggregates bot P&L into portfolio snapshots
     const portfolioPerfRecorderHandler = new NodejsFunction(this, 'PortfolioPerformanceRecorderHandler', {
       functionName: `${props.name}-${props.environment}-analytics-portfolio-perf-recorder`,

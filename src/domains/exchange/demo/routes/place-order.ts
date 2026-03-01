@@ -3,27 +3,14 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, TransactWriteCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { jsonResponse } from '../utils';
 import { ensureBalance } from './get-balance';
-import { DEMO_COINS, BINANCE_TICKER_URL } from '../../../shared/types';
+import { DEMO_COINS } from '../../../shared/types';
 import type { DemoOrderRecord } from '../../../shared/types';
+import { fetchBtcPrice } from '../../../shared/fetch-utils';
 import { randomUUID } from 'node:crypto';
 
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const BALANCES_TABLE = process.env.BALANCES_TABLE_NAME!;
 const ORDERS_TABLE = process.env.ORDERS_TABLE_NAME!;
-
-/**
- * Fetches the current BTC price from the Binance public API (via BTCUSDT).
- *
- * @returns The current BTC price in USD (approximated via USDT).
- */
-async function fetchBtcPrice(): Promise<number> {
-  const res = await fetch(BINANCE_TICKER_URL);
-  if (!res.ok) {
-    throw new Error(`Binance API error: ${res.status}`);
-  }
-  const data = (await res.json()) as { symbol: string; price: string };
-  return parseFloat(data.price);
-}
 
 /**
  * Places a market order on the demo exchange. The order is always filled

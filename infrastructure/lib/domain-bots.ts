@@ -64,6 +64,11 @@ export class DomainBotsStack extends cdk.NestedStack {
       sortKey: { name: 'status', type: dynamodb.AttributeType.STRING },
     });
 
+    this.botsTable.addGlobalSecondaryIndex({
+      indexName: 'status-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+    });
+
     this.settingsTable = new dynamodb.Table(this, 'SettingsTable', {
       tableName: `${props.name}-${props.environment}-bots-settings`,
       partitionKey: { name: 'sub', type: dynamodb.AttributeType.STRING },

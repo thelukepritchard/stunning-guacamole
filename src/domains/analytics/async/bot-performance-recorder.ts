@@ -1,6 +1,6 @@
 import type { ScheduledEvent } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, ScanCommand, QueryCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { BotRecord, TradeRecord, BotPerformanceRecord } from '../../shared/types';
 
 const ddbDoc = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -77,20 +77,21 @@ function calculatePnl(
  * @param _event - The EventBridge scheduled event (unused).
  */
 export async function handler(_event: ScheduledEvent): Promise<void> {
-  // Scan for active bots (filter in DynamoDB to reduce data transfer)
+  // Query active bots using status-index GSI (avoids full table scan)
   const activeBots: BotRecord[] = [];
   let lastKey: Record<string, unknown> | undefined;
 
   do {
-    const scan = await ddbDoc.send(new ScanCommand({
+    const result = await ddbDoc.send(new QueryCommand({
       TableName: process.env.BOTS_TABLE_NAME!,
-      FilterExpression: '#status = :active',
+      IndexName: 'status-index',
+      KeyConditionExpression: '#status = :active',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: { ':active': 'active' },
       ExclusiveStartKey: lastKey,
     }));
-    activeBots.push(...(scan.Items as BotRecord[] ?? []));
-    lastKey = scan.LastEvaluatedKey;
+    activeBots.push(...(result.Items as BotRecord[] ?? []));
+    lastKey = result.LastEvaluatedKey;
   } while (lastKey);
 
   if (activeBots.length === 0) {

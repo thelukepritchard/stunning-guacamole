@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { jsonResponse, DEMO_EXCHANGE_API_URL } from '../utils';
 import { resolveActiveExchange } from '../resolve-exchange';
+import { fetchWithTimeout } from '../../shared/fetch-utils';
 
 /**
  * Cancels a pending order on the user's active exchange.
@@ -35,12 +36,16 @@ export async function cancelOrder(event: APIGatewayProxyEvent): Promise<APIGatew
 
   let res: Response;
   try {
-    res = await fetch(url, { method: 'DELETE' });
+    res = await fetchWithTimeout(url, { method: 'DELETE' });
   } catch {
     return jsonResponse(502, { error: 'Failed to reach demo exchange' });
   }
 
-  const data = await res.json().catch(() => ({ error: 'Upstream error' }));
+  if (!res.ok) {
+    console.error(`Demo exchange cancel error: ${res.status}`);
+    return jsonResponse(502, { error: 'Failed to cancel order on demo exchange' });
+  }
 
-  return jsonResponse(res.status, data);
+  const data = await res.json().catch(() => ({ message: 'Order cancelled' }));
+  return jsonResponse(200, data);
 }

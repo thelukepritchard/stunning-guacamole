@@ -20,7 +20,7 @@ export async function deleteConnection(event: APIGatewayProxyEvent): Promise<API
   const sub = event.requestContext.authorizer?.claims?.sub;
   if (!sub) return jsonResponse(401, { error: 'Unauthorized' });
 
-  const connectionId = event.pathParameters?.connectionId;
+  const connectionId = event.pathParameters?.connectionId?.trim();
   if (!connectionId) {
     return jsonResponse(400, { error: 'Missing required path parameter: connectionId' });
   }

@@ -236,8 +236,13 @@ export async function deleteAccount(event: APIGatewayProxyEvent): Promise<APIGat
     `backtests/${sub}/`,
   );
 
-  // Run all data deletions in parallel
-  await Promise.all([...singleDeletes, ...compositeDeletes, ...gsiDeletes, s3Cleanup]);
+  // Run all data deletions in parallel — use allSettled so one failure doesn't abort the rest
+  const results = await Promise.allSettled([...singleDeletes, ...compositeDeletes, ...gsiDeletes, s3Cleanup]);
+  const failures = results.filter((r) => r.status === 'rejected');
+  if (failures.length > 0) {
+    console.error(`Account deletion: ${failures.length} cleanup task(s) failed:`,
+      failures.map((f) => (f as PromiseRejectedResult).reason));
+  }
 
   // ─── Cognito cleanup ────────────────────────────────────────
   // Wrapped in try/catch so that data deletion (above) is not wasted

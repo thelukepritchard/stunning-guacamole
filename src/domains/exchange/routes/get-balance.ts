@@ -1,28 +1,10 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { jsonResponse, DEMO_EXCHANGE_API_URL } from '../utils';
-import { BINANCE_TICKER_URL, COIN_NAMES, CURRENCY_NAMES } from '../../shared/types';
+import { COIN_NAMES, CURRENCY_NAMES } from '../../shared/types';
 import type { BalanceResponse, HoldingEntry } from '../../shared/types';
 import { resolveActiveExchange } from '../resolve-exchange';
 import { getAdapter } from '../adapters';
-
-/**
- * Fetches the current BTC price from Binance.
- *
- * @returns The BTC price in USD.
- * @throws If Binance returns a non-200 response or an invalid price.
- */
-async function fetchBtcPrice(): Promise<number> {
-  const res = await fetch(BINANCE_TICKER_URL);
-  if (!res.ok) {
-    throw new Error(`Binance ticker returned ${res.status}`);
-  }
-  const data = (await res.json()) as { price: string };
-  const price = parseFloat(data.price);
-  if (isNaN(price)) {
-    throw new Error('Invalid price returned from Binance');
-  }
-  return price;
-}
+import { fetchWithTimeout, fetchBtcPrice } from '../../shared/fetch-utils';
 
 /**
  * Returns the user's balance with a full holdings breakdown.
@@ -64,14 +46,14 @@ export async function getBalance(event: APIGatewayProxyEvent): Promise<APIGatewa
   let balanceRes: Response;
   let btcPrice: number;
   try {
-    [balanceRes, btcPrice] = await Promise.all([fetch(balanceUrl), fetchBtcPrice()]);
+    [balanceRes, btcPrice] = await Promise.all([fetchWithTimeout(balanceUrl), fetchBtcPrice()]);
   } catch {
     return jsonResponse(502, { error: 'Failed to reach demo exchange' });
   }
 
   if (!balanceRes.ok) {
-    const err = await balanceRes.json().catch(() => ({ error: 'Upstream error' }));
-    return jsonResponse(balanceRes.status, err);
+    console.error(`Demo exchange balance error: ${balanceRes.status}`);
+    return jsonResponse(502, { error: 'Failed to fetch balance from demo exchange' });
   }
 
   const data = (await balanceRes.json()) as { usd: number; btc: number };
